@@ -1,9 +1,8 @@
 import { BrowserRouter, Routes, Route } from "react-router";
-import { Authenticated, Unauthenticated } from "convex/react";
+import { Authenticated, Unauthenticated, AuthLoading } from "convex/react";
 import { Toaster } from "@/components/ui/sonner";
 import AppShell from "@/components/layout/AppShell";
 import LoginPage from "@/pages/LoginPage";
-import CallbackPage from "@/pages/CallbackPage";
 import DashboardPage from "@/pages/DashboardPage";
 import NewStoryPage from "@/pages/NewStoryPage";
 import ProductionPage from "@/pages/ProductionPage";
@@ -13,6 +12,11 @@ import SettingsPage from "@/pages/SettingsPage";
 export default function App() {
   return (
     <BrowserRouter>
+      <AuthLoading>
+        <div className="flex items-center justify-center h-screen bg-zinc-950 text-white">
+          Loading...
+        </div>
+      </AuthLoading>
       <Authenticated>
         <Routes>
           <Route element={<AppShell />}>
@@ -22,15 +26,11 @@ export default function App() {
             <Route path="/story/:id/review" element={<ReviewPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Route>
-          <Route path="/callback" element={<CallbackPage />} />
         </Routes>
         <Toaster />
       </Authenticated>
       <Unauthenticated>
-        <Routes>
-          <Route path="/callback" element={<CallbackPage />} />
-          <Route path="*" element={<LoginPage />} />
-        </Routes>
+        <LoginPage />
       </Unauthenticated>
     </BrowserRouter>
   );

@@ -1,17 +1,10 @@
 export default {
   providers: [
     {
-      type: "customJwt" as const,
-      issuer: `https://api.workos.com/`,
-      algorithm: "RS256" as const,
-      applicationID: process.env.WORKOS_CLIENT_ID,
-      jwks: `https://api.workos.com/sso/jwks/${process.env.WORKOS_CLIENT_ID}`,
-    },
-    {
-      type: "customJwt" as const,
-      issuer: `https://api.workos.com/user_management/${process.env.WORKOS_CLIENT_ID}`,
-      algorithm: "RS256" as const,
-      jwks: `https://api.workos.com/sso/jwks/${process.env.WORKOS_CLIENT_ID}`,
+      // Set CLERK_JWT_ISSUER_DOMAIN in the Convex dashboard under Settings > Environment Variables
+      // Value should be your Clerk frontend API URL, e.g. https://your-app.clerk.accounts.dev
+      domain: process.env.CLERK_JWT_ISSUER_DOMAIN,
+      applicationID: "convex",
     },
   ],
 };

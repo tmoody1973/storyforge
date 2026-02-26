@@ -1,8 +1,6 @@
-import { useAuth } from "@workos-inc/authkit-react";
+import { SignInButton } from "@clerk/clerk-react";
 
 export default function LoginPage() {
-  const { signIn } = useAuth();
-
   return (
     <div className="flex items-center justify-center min-h-screen bg-zinc-950">
       <div className="text-center space-y-8">
@@ -12,12 +10,11 @@ export default function LoginPage() {
             AI-Powered Radio Storytelling Studio
           </p>
         </div>
-        <button
-          onClick={() => signIn()}
-          className="px-6 py-3 bg-white text-zinc-900 font-semibold rounded-lg hover:bg-zinc-200 transition-colors"
-        >
-          Sign In
-        </button>
+        <SignInButton mode="modal">
+          <button className="px-6 py-3 bg-white text-zinc-900 font-semibold rounded-lg hover:bg-zinc-200 transition-colors">
+            Sign In
+          </button>
+        </SignInButton>
       </div>
     </div>
   );
