@@ -31,6 +31,7 @@ __pycache__/
 .venv/
 venv/
 *.egg-info/
+.mypy_cache/
 
 # Gradient ADK
 agents/.gradient/config.json
