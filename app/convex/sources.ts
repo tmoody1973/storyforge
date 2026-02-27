@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
+import { api } from "./_generated/api";
 
 export const listByStory = query({
   args: { storyId: v.id("stories") },
@@ -40,6 +41,17 @@ export const create = mutation({
     if (story && story.status === "draft") {
       await ctx.db.patch(args.storyId, { status: "transcribing" });
     }
+
+    // Schedule Deepgram transcription immediately
+    const keyterms: string[] = [];
+    if (args.speakerName) keyterms.push(args.speakerName);
+
+    await ctx.scheduler.runAfter(0, api.actions.deepgram.transcribe, {
+      sourceId,
+      storyId: args.storyId,
+      audioUrl: args.audioUrl,
+      keyterms: keyterms.length > 0 ? keyterms : undefined,
+    });
 
     return sourceId;
   },
@@ -82,5 +94,27 @@ export const remove = mutation({
   args: { id: v.id("sources") },
   handler: async (ctx, args) => {
     await ctx.db.delete(args.id);
+  },
+});
+
+export const retryTranscription = mutation({
+  args: { id: v.id("sources") },
+  handler: async (ctx, args) => {
+    const source = await ctx.db.get(args.id);
+    if (!source || source.status !== "failed") return;
+
+    // Reset status
+    await ctx.db.patch(args.id, { status: "transcribing" });
+
+    // Re-schedule
+    const keyterms: string[] = [];
+    if (source.speakerName) keyterms.push(source.speakerName);
+
+    await ctx.scheduler.runAfter(0, api.actions.deepgram.transcribe, {
+      sourceId: args.id,
+      storyId: source.storyId,
+      audioUrl: source.audioUrl,
+      keyterms: keyterms.length > 0 ? keyterms : undefined,
+    });
   },
 });
