@@ -17,20 +17,6 @@ export const seedStations = mutation({
         voiceGuide: "Urban alternative. Culturally specific. Centers Black experience. Unapologetic. Contemporary language.",
         systemPrompt: "You are writing for HYFIN, Milwaukee's urban alternative station. Your voice is culturally specific, centering the Black experience. Be unapologetic and direct. Use contemporary language naturally. The audience is engaged, culturally literate, and expects authenticity.",
       },
-      {
-        slug: "414music",
-        name: "414 Music",
-        description: "Milwaukee's local music spotlight.",
-        voiceGuide: "Artist-first. Technical when needed, accessible always. Lets the music speak.",
-        systemPrompt: "You are writing for 414 Music, Milwaukee's local music platform. Put the artist and their work first. Be technically informed when discussing craft, but always accessible. Let the music and the musician tell the story. Milwaukee's music scene is the heartbeat.",
-      },
-      {
-        slug: "rhythmlab",
-        name: "Rhythm Lab Radio",
-        description: "Curated music with global perspective.",
-        voiceGuide: "Curated. Global perspective. Music-nerd energy. Deep cuts and context.",
-        systemPrompt: "You are writing for Rhythm Lab Radio. Your voice is curated and knowledgeable — music-nerd energy with a global perspective. Draw connections between genres, eras, and scenes. Offer context that deepens appreciation. Deep cuts welcome.",
-      },
     ];
 
     for (const station of stations) {
@@ -362,8 +348,17 @@ Always. The music doesn't stop just because the buildings come down. We'll find 
       searchableText,
     });
 
-    // Link transcript back to the story
-    await ctx.db.patch(storyId, { transcriptId });
+    // Create a source linking the story to the transcript
+    await ctx.db.insert("sources", {
+      storyId,
+      title: "Marcus Thompson Interview",
+      audioUrl: "https://placeholder.storyforge.app/demo-jazz-clubs.mp3",
+      transcriptId,
+      durationSeconds: 185,
+      status: "ready",
+      speakerName: "Marcus Thompson",
+      uploadedAt: Date.now(),
+    });
 
     return { storyId, transcriptId };
   },
