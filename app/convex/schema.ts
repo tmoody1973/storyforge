@@ -29,11 +29,9 @@ export default defineSchema({
     stationId: v.string(),
     creatorId: v.id("users"),
     status: v.string(),
-    audioFileId: v.optional(v.id("_storage")),
     audioDurationSeconds: v.optional(v.number()),
     editedAudioFileId: v.optional(v.id("_storage")),
     previewAudioFileId: v.optional(v.id("_storage")),
-    transcriptId: v.optional(v.id("transcripts")),
     editOperations: v.optional(v.any()),
     assemblyState: v.optional(v.any()),
     generatedScript: v.optional(v.any()),
@@ -101,6 +99,19 @@ export default defineSchema({
   })
     .index("by_story", ["storyId"])
     .searchIndex("search_text", { searchField: "searchableText" }),
+
+  sources: defineTable({
+    storyId: v.id("stories"),
+    title: v.string(),
+    audioUrl: v.string(),
+    transcriptId: v.optional(v.id("transcripts")),
+    durationSeconds: v.optional(v.number()),
+    status: v.string(), // "uploading" | "transcribing" | "ready" | "failed"
+    speakerName: v.optional(v.string()),
+    uploadedAt: v.number(),
+  })
+    .index("by_story", ["storyId"])
+    .index("by_story_status", ["storyId", "status"]),
 
   styleProfiles: defineTable({
     userId: v.id("users"),
