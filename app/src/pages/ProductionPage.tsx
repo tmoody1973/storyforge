@@ -1,6 +1,6 @@
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 import { useParams } from "react-router";
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useWavesurfer } from "@/hooks/useWavesurfer";
@@ -8,6 +8,7 @@ import { StoryHeader } from "@/components/production/StoryHeader";
 import { WaveformPanel } from "@/components/production/WaveformPanel";
 import TranscriptPanel from "@/components/production/TranscriptPanel";
 import CoachPanel from "@/components/production/CoachPanel";
+import SourcePanel from "@/components/production/SourcePanel";
 import type { Speaker, WordTimestamp } from "@/lib/transcript";
 
 export default function ProductionPage() {
@@ -20,6 +21,25 @@ export default function ProductionPage() {
 
   const story = useQuery(api.stories.get, { id: storyId });
   const transcript = useQuery(api.transcripts.getByStory, { storyId });
+  const sources = useQuery(api.sources.listByStory, storyId ? { storyId } : "skip");
+  const [selectedSourceId, setSelectedSourceId] = useState<Id<"sources"> | null>(null);
+  const createSource = useMutation(api.sources.create);
+
+  // Auto-select first source
+  useEffect(() => {
+    if (sources?.length && !selectedSourceId) {
+      setSelectedSourceId(sources[0]._id);
+    }
+  }, [sources, selectedSourceId]);
+
+  const handleUploadComplete = async (url: string, name: string) => {
+    const sourceId = await createSource({
+      storyId,
+      title: name.replace(/\.[^.]+$/, ""),
+      audioUrl: url,
+    });
+    setSelectedSourceId(sourceId);
+  };
 
   // ---------------------------------------------------------------------------
   // Waveform
@@ -132,22 +152,30 @@ export default function ProductionPage() {
       />
 
       <div className="flex flex-1 min-h-0">
-        {/* Left panel: Transcript */}
-        <div className="w-[55%] border-r border-zinc-800 overflow-hidden">
-          {transcript ? (
-            <TranscriptPanel
-              markdown={transcript.markdown}
-              speakers={speakers}
-              wordTimestamps={wordTimestamps}
-              currentTime={ws.currentTime}
-              onSeek={ws.seek}
-              fillerWords={fillerWords}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
-              No transcript available yet.
-            </div>
-          )}
+        {/* Left panel: Sources + Transcript */}
+        <div className="w-[55%] border-r border-zinc-800 overflow-hidden flex flex-col">
+          <SourcePanel
+            storyId={storyId}
+            selectedSourceId={selectedSourceId}
+            onSelectSource={setSelectedSourceId}
+            onUploadComplete={handleUploadComplete}
+          />
+          <div className="flex-1 overflow-hidden">
+            {transcript ? (
+              <TranscriptPanel
+                markdown={transcript.markdown}
+                speakers={speakers}
+                wordTimestamps={wordTimestamps}
+                currentTime={ws.currentTime}
+                onSeek={ws.seek}
+                fillerWords={fillerWords}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
+                No transcript available yet.
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Right panel: Coach */}
