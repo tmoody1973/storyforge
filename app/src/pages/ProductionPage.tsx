@@ -170,6 +170,7 @@ export default function ProductionPage() {
           <div className="flex-1 overflow-hidden">
             {transcript ? (
               <TranscriptPanel
+                transcriptId={transcript?._id}
                 markdown={transcript.markdown}
                 speakers={speakers}
                 wordTimestamps={wordTimestamps}

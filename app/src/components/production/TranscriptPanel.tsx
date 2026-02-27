@@ -1,5 +1,8 @@
-import { useMemo, useEffect, useRef } from "react";
+import { useMemo, useEffect, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import {
   parseTranscriptMarkdown,
   findActiveSegment,
@@ -8,6 +11,7 @@ import {
 import type { Speaker, WordTimestamp } from "@/lib/transcript";
 
 interface TranscriptPanelProps {
+  transcriptId?: string;
   markdown: string;
   speakers: Speaker[];
   wordTimestamps: WordTimestamp[];
@@ -22,12 +26,17 @@ interface TranscriptPanelProps {
 }
 
 export default function TranscriptPanel({
+  transcriptId,
   markdown,
   speakers,
   wordTimestamps,
   currentTime,
   onSeek,
 }: TranscriptPanelProps) {
+  const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
+  const [editName, setEditName] = useState("");
+  const renameSpeaker = useMutation(api.transcripts.renameSpeaker);
+
   const segments = useMemo(
     () => parseTranscriptMarkdown(markdown, speakers, wordTimestamps),
     [markdown, speakers, wordTimestamps],
@@ -43,7 +52,7 @@ export default function TranscriptPanel({
   return (
     <div className="flex h-full flex-col">
       <div className="px-4 py-3">
-        <h2 className="text-sm font-semibold uppercase text-zinc-400">
+        <h2 className="text-sm font-semibold uppercase text-cream-dim">
           Transcript
         </h2>
       </div>
@@ -67,8 +76,8 @@ export default function TranscriptPanel({
                 }}
                 className={`cursor-pointer rounded-lg px-3 py-2 transition-colors ${
                   isActive
-                    ? "bg-zinc-800 ring-1 ring-zinc-700"
-                    : "hover:bg-zinc-800/50"
+                    ? "bg-card ring-1 ring-charcoal-border"
+                    : "hover:bg-charcoal-surface"
                 }`}
               >
                 <div className="mb-1 flex items-center gap-2">
@@ -76,14 +85,46 @@ export default function TranscriptPanel({
                     className="h-2 w-2 rounded-full"
                     style={{ backgroundColor: segment.speakerColor }}
                   />
-                  <span className="text-xs font-medium text-zinc-300">
-                    {segment.speakerName}
-                  </span>
-                  <span className="text-xs text-zinc-500">
+                  {editingSpeaker === segment.speakerId && transcriptId ? (
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      onBlur={() => {
+                        if (editName.trim() && editName !== segment.speakerName) {
+                          renameSpeaker({
+                            transcriptId: transcriptId as Id<"transcripts">,
+                            speakerId: segment.speakerId,
+                            newName: editName.trim(),
+                          });
+                        }
+                        setEditingSpeaker(null);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") (e.target as HTMLInputElement).blur();
+                        if (e.key === "Escape") setEditingSpeaker(null);
+                      }}
+                      autoFocus
+                      className="text-xs font-medium text-cream bg-transparent border-b border-brand-orange outline-none w-24"
+                    />
+                  ) : (
+                    <span
+                      className="text-xs font-medium text-cream-muted cursor-pointer hover:text-brand-orange transition-colors"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingSpeaker(segment.speakerId);
+                        setEditName(segment.speakerName);
+                      }}
+                      title="Click to rename speaker"
+                    >
+                      {segment.speakerName}
+                    </span>
+                  )}
+                  <span className="text-xs text-cream-faint">
                     {formatTimestamp(segment.startTime)}
                   </span>
                 </div>
-                <p className="text-sm leading-relaxed text-zinc-300">
+                <p className="text-sm leading-relaxed text-cream-muted">
                   {segment.text}
                 </p>
               </div>

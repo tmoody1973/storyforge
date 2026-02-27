@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
 
 export const getByStory = query({
   args: { storyId: v.id("stories") },
@@ -80,6 +80,35 @@ export const insertFromDeepgram = internalMutation({
     }
 
     return transcriptId;
+  },
+});
+
+export const renameSpeaker = mutation({
+  args: {
+    transcriptId: v.id("transcripts"),
+    speakerId: v.string(),
+    newName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const transcript = await ctx.db.get(args.transcriptId);
+    if (!transcript) return;
+
+    const speakers = transcript.speakers as Array<{ id: string; name: string; color: string }>;
+    const updated = speakers.map((s) =>
+      s.id === args.speakerId ? { ...s, name: args.newName } : s,
+    );
+
+    // Also update markdown — replace old speaker name with new one
+    const oldSpeaker = speakers.find((s) => s.id === args.speakerId);
+    let markdown = transcript.markdown;
+    if (oldSpeaker) {
+      markdown = markdown.replaceAll(
+        `**${oldSpeaker.name}:**`,
+        `**${args.newName}:**`,
+      );
+    }
+
+    await ctx.db.patch(args.transcriptId, { speakers: updated, markdown });
   },
 });
 
