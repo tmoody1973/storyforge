@@ -55,7 +55,8 @@ export default function ProductionPage() {
   const waveformRef = useRef<HTMLDivElement>(null);
   const ws = useWavesurfer({
     container: waveformRef,
-    placeholderDuration: story?.audioDurationSeconds ?? 120,
+    url: selectedSource?.audioUrl,
+    placeholderDuration: selectedSource?.durationSeconds ?? story?.audioDurationSeconds ?? 120,
   });
 
   // ---------------------------------------------------------------------------
@@ -77,7 +78,7 @@ export default function ProductionPage() {
         id: `quote-${q.start}`,
         start: q.start,
         end: q.end,
-        color: "rgba(74, 158, 255, 0.15)",
+        color: "rgba(248, 151, 29, 0.15)",
         content: label,
       });
     }
