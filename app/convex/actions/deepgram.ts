@@ -4,7 +4,7 @@ import { v } from "convex/values";
 
 export const transcribe = action({
   args: { audioFileId: v.id("_storage") },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, _args) => {
     const apiKey = process.env.DEEPGRAM_API_KEY;
 
     if (!apiKey) {

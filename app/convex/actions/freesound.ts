@@ -7,7 +7,7 @@ export const search = action({
     query: v.string(),
     pageSize: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, args) => {
     const apiKey = process.env.FREESOUND_API_KEY;
 
     if (!apiKey) {

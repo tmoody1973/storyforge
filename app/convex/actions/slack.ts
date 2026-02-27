@@ -7,7 +7,7 @@ export const postToSlack = internalAction({
     message: v.string(),
     detail: v.optional(v.string()),
   },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, args) => {
     const webhookUrl = process.env.SLACK_WEBHOOK_URL;
 
     if (!webhookUrl) {

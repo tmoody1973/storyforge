@@ -7,7 +7,7 @@ export const generateSoundEffect = action({
     prompt: v.string(),
     durationSeconds: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, args) => {
     const apiKey = process.env.ELEVENLABS_API_KEY;
 
     if (!apiKey) {
@@ -24,7 +24,7 @@ export const generateMusic = action({
     prompt: v.string(),
     durationSeconds: v.number(),
   },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, args) => {
     const apiKey = process.env.ELEVENLABS_API_KEY;
 
     if (!apiKey) {

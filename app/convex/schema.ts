@@ -29,6 +29,9 @@ export default defineSchema({
     stationId: v.string(),
     creatorId: v.id("users"),
     status: v.string(),
+    // Legacy fields — kept for backwards compat with existing data
+    audioFileId: v.optional(v.id("_storage")),
+    transcriptId: v.optional(v.id("transcripts")),
     audioDurationSeconds: v.optional(v.number()),
     editedAudioFileId: v.optional(v.id("_storage")),
     previewAudioFileId: v.optional(v.id("_storage")),

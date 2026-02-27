@@ -29,8 +29,8 @@ export default function DashboardPage() {
       ? stories
       : stories?.filter((s) => s.stationId === stationFilter);
 
-  const stationNameMap = new Map(
-    stations?.map((s) => [s._id, s.name]) ?? []
+  const stationNameMap = new Map<string, string>(
+    stations?.map((s) => [s._id as string, s.name]) ?? []
   );
 
   return (

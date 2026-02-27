@@ -8,7 +8,7 @@ export const sendNotificationEmail = internalAction({
     subject: v.string(),
     body: v.string(),
   },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, args) => {
     const apiKey = process.env.RESEND_API_KEY;
 
     if (!apiKey) {

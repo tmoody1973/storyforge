@@ -7,7 +7,7 @@ export const callAgent = action({
     agent: v.string(), // "coach" | "transcript" | "content" | "workflow"
     payload: v.any(),
   },
-  handler: async (ctx, args) => {
+  handler: async (_ctx, args) => {
     const agentUrl = process.env.GRADIENT_AGENT_URL;
 
     if (!agentUrl) {
