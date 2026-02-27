@@ -1,7 +1,7 @@
-import { useQuery } from "convex/react";
+import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
-import { FileAudio, Loader2, CheckCircle, AlertCircle, Upload } from "lucide-react";
+import { FileAudio, Loader2, CheckCircle, AlertCircle, Upload, RotateCcw } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { UploadButton } from "@/lib/uploadthing";
 
@@ -21,7 +21,7 @@ const statusIcons: Record<string, typeof Loader2> = {
 
 const statusColors: Record<string, string> = {
   uploading: "text-yellow-400",
-  transcribing: "text-blue-400",
+  transcribing: "text-brand-orange",
   ready: "text-green-400",
   failed: "text-red-400",
 };
@@ -33,11 +33,12 @@ export default function SourcePanel({
   onUploadComplete,
 }: SourcePanelProps) {
   const sources = useQuery(api.sources.listByStory, { storyId });
+  const retryTranscription = useMutation(api.sources.retryTranscription);
 
   return (
-    <div className="border-b border-zinc-800">
+    <div className="border-b border-border">
       <div className="px-4 py-2 flex items-center justify-between">
-        <h3 className="text-xs font-semibold uppercase text-zinc-400">
+        <h3 className="text-xs font-semibold uppercase text-cream-dim">
           Sources
         </h3>
         <UploadButton
@@ -52,7 +53,7 @@ export default function SourcePanel({
           }}
           appearance={{
             button:
-              "bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-xs px-2 py-1 h-7 rounded",
+              "bg-card hover:bg-charcoal-hover text-cream-muted text-xs px-2 py-1 h-7 rounded",
             allowedContent: "hidden",
           }}
           content={{
@@ -77,25 +78,37 @@ export default function SourcePanel({
                   onClick={() => onSelectSource(source._id)}
                   className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-colors ${
                     isSelected
-                      ? "bg-zinc-800 ring-1 ring-zinc-700"
-                      : "hover:bg-zinc-800/50"
+                      ? "bg-card ring-1 ring-charcoal-border"
+                      : "hover:bg-charcoal-surface"
                   }`}
                 >
                   <StatusIcon
-                    className={`h-3.5 w-3.5 flex-shrink-0 ${statusColors[source.status] ?? "text-zinc-400"} ${
+                    className={`h-3.5 w-3.5 flex-shrink-0 ${statusColors[source.status] ?? "text-cream-dim"} ${
                       spinning ? "animate-spin" : ""
                     }`}
                   />
-                  <span className="text-zinc-200 truncate flex-1">
+                  <span className="text-cream truncate flex-1">
                     {source.title}
                   </span>
                   {source.durationSeconds && (
-                    <span className="text-zinc-500">
+                    <span className="text-cream-faint">
                       {Math.floor(source.durationSeconds / 60)}:
                       {String(
                         Math.floor(source.durationSeconds % 60)
                       ).padStart(2, "0")}
                     </span>
+                  )}
+                  {source.status === "failed" && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        retryTranscription({ id: source._id });
+                      }}
+                      className="text-cream-faint hover:text-brand-orange transition-colors"
+                      title="Retry transcription"
+                    >
+                      <RotateCcw className="h-3.5 w-3.5" />
+                    </button>
                   )}
                 </button>
               );
@@ -105,7 +118,7 @@ export default function SourcePanel({
       )}
 
       {(!sources || sources.length === 0) && (
-        <div className="px-4 pb-3 text-xs text-zinc-500 flex items-center gap-2">
+        <div className="px-4 pb-3 text-xs text-cream-faint flex items-center gap-2">
           <Upload className="h-3.5 w-3.5" />
           Upload interview audio to get started
         </div>
