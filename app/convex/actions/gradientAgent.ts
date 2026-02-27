@@ -1,6 +1,7 @@
 "use node";
 import { action } from "../_generated/server";
 import { v } from "convex/values";
+import { api, internal } from "../_generated/api";
 
 export const callAgent = action({
   args: {
@@ -49,7 +50,23 @@ export const callAgent = action({
       }
     }
 
-    // TODO: Real HTTP call to deployed Gradient ADK agent
-    throw new Error("Real Gradient Agent integration not yet implemented");
+    const response = await fetch(agentUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        agent: args.agent,
+        input: args.payload,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Gradient Agent error ${response.status}: ${errorText}`);
+    }
+
+    const data = await response.json();
+    return data.result ?? data;
   },
 });
