@@ -50,10 +50,12 @@ export const callAgent = action({
       }
     }
 
+    const doToken = process.env.DIGITALOCEAN_API_TOKEN;
     const response = await fetch(agentUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
+        ...(doToken ? { Authorization: `Bearer ${doToken}` } : {}),
       },
       body: JSON.stringify({
         agent: args.agent,

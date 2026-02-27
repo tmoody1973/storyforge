@@ -1,3 +1,4 @@
-name: storyforge-agents
-version: "1.0"
-description: "StoryForge multi-agent storytelling system for public radio"
+agent_environment: development
+agent_name: storyforge-agents
+description: 'StoryForge multi-agent storytelling system for public radio'
+entrypoint_file: main.py

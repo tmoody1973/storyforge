@@ -6,15 +6,12 @@ emotional arc, and filler words using Claude Sonnet via Gradient/Anthropic.
 
 import json
 import logging
-import os
 
-import httpx
 from gradient_adk import trace_llm, trace_retriever
 
-logger = logging.getLogger(__name__)
+from ._llm import call_llm
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-GRADIENT_MODEL_ACCESS_KEY = os.environ.get("GRADIENT_MODEL_ACCESS_KEY", "")
+logger = logging.getLogger(__name__)
 
 ANALYSIS_SYSTEM_PROMPT = """You are an expert radio journalist and story analyst. Analyze the following interview transcript and extract:
 
@@ -35,17 +32,30 @@ ANALYSIS_SYSTEM_PROMPT = """You are an expert radio journalist and story analyst
 
 Return ONLY valid JSON with keys: story_angles, key_quotes, emotional_arc"""
 
+STUB_RESULT = {
+    "story_angles": [
+        {"angle": "Community Impact", "strength": 0.85, "reasoning": "Strong personal narratives throughout"},
+        {"angle": "Policy Change", "strength": 0.7, "reasoning": "References to systemic issues"},
+    ],
+    "key_quotes": [],
+    "emotional_arc": [
+        {"time": 0, "intensity": 0.3},
+        {"time": 30, "intensity": 0.5},
+        {"time": 60, "intensity": 0.8},
+        {"time": 90, "intensity": 0.6},
+    ],
+}
+
 
 @trace_retriever("transcript_archive_search")
 async def search_story_archive(themes: list[str]) -> list[str]:
     """Check story archive for prior coverage of similar themes."""
-    # TODO: Wire up Gradient Knowledge Base when configured
     return []
 
 
 @trace_llm("transcript_analyze")
 async def analyze_transcript(transcript: str, word_timestamps: list) -> dict:
-    """Run AI analysis on transcript text using Claude."""
+    """Run AI analysis on transcript text."""
 
     user_message = f"""Analyze this interview transcript:
 
@@ -58,64 +68,11 @@ Total duration: approximately {word_timestamps[-1]["end"] if word_timestamps els
 
 Return your analysis as JSON with keys: story_angles, key_quotes, emotional_arc"""
 
-    # Try Gradient SDK first, then Anthropic API
-    headers = {}
-    url = ""
-    body = {}
+    text = await call_llm(ANALYSIS_SYSTEM_PROMPT, user_message, max_tokens=4096)
 
-    if GRADIENT_MODEL_ACCESS_KEY:
-        url = "https://api.gradient.ai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {GRADIENT_MODEL_ACCESS_KEY}",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": "anthropic-claude-4.5-sonnet",
-            "messages": [
-                {"role": "system", "content": ANALYSIS_SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            "max_tokens": 4096,
-        }
-    elif ANTHROPIC_API_KEY:
-        url = "https://api.anthropic.com/v1/messages"
-        headers = {
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": "claude-sonnet-4-5-20241022",
-            "max_tokens": 4096,
-            "system": ANALYSIS_SYSTEM_PROMPT,
-            "messages": [{"role": "user", "content": user_message}],
-        }
-    else:
-        logger.warning("No API key configured — returning stub analysis")
-        return {
-            "story_angles": [
-                {"angle": "Community Impact", "strength": 0.85, "reasoning": "Strong personal narratives throughout"},
-                {"angle": "Policy Change", "strength": 0.7, "reasoning": "References to systemic issues"},
-            ],
-            "key_quotes": [],
-            "emotional_arc": [
-                {"time": 0, "intensity": 0.3},
-                {"time": 30, "intensity": 0.5},
-                {"time": 60, "intensity": 0.8},
-                {"time": 90, "intensity": 0.6},
-            ],
-        }
-
-    async with httpx.AsyncClient(timeout=120.0) as client:
-        response = await client.post(url, headers=headers, json=body)
-        response.raise_for_status()
-        data = response.json()
-
-    # Extract text from response
-    if GRADIENT_MODEL_ACCESS_KEY:
-        text = data["choices"][0]["message"]["content"]
-    else:
-        text = data["content"][0]["text"]
+    if text is None:
+        logger.warning("All LLM providers failed — returning stub analysis")
+        return STUB_RESULT
 
     # Parse JSON from response (handle markdown code blocks)
     text = text.strip()

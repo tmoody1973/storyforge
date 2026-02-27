@@ -5,16 +5,12 @@ via Gradient SDK or Anthropic API for generation.
 """
 
 import logging
-import os
 
-import httpx
 from gradient_adk import trace_retriever, trace_llm
 
-logger = logging.getLogger(__name__)
+from ._llm import call_llm, GRADIENT_MODEL_ACCESS_KEY
 
-STATION_KB_ID = os.environ.get("STATION_KNOWLEDGE_KB_UUID", "")
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-GRADIENT_MODEL_ACCESS_KEY = os.environ.get("GRADIENT_MODEL_ACCESS_KEY", "")
+logger = logging.getLogger(__name__)
 
 COACHING_SYSTEM_PROMPT = """You are an expert radio storytelling coach, drawing on techniques from:
 - This American Life (narrative structure, personal storytelling)
@@ -36,38 +32,31 @@ When reviewing transcripts, identify:
 
 Keep responses concise (2-4 paragraphs). Use radio production terminology naturally."""
 
+STUB_RESPONSE = (
+    "Focus on finding the strongest emotional thread in your transcript. "
+    "Look for the moment where your subject's voice changes — that's usually "
+    "where the real story lives. Lead with that moment, then build context around it."
+)
+
 
 @trace_retriever("coach_kb_search")
 async def search_station_knowledge(query: str) -> list[str]:
     """Retrieve relevant coaching context from station knowledge base."""
-    if not STATION_KB_ID:
-        return []
-
-    # TODO: Wire up Gradient Knowledge Base retrieval when deployed
-    # from gradient import Gradient
-    # client = Gradient()
-    # response = client.retrieve.documents(
-    #     knowledge_base_id=STATION_KB_ID,
-    #     num_results=5,
-    #     query=query,
-    # )
-    # return [r.content for r in response.results] if response else []
     return []
 
 
 @trace_llm("coach_generate")
 async def generate_coaching(query: str, context_docs: list[str], production_state: dict) -> str:
-    """Generate coaching response using Claude."""
+    """Generate coaching response."""
     current_step = production_state.get("step", "editing")
     transcript_context = production_state.get("transcript_context", "")
 
     context_section = ""
     if context_docs:
-        context_section = f"\n\nRelevant station guidelines:\n" + "\n".join(f"- {doc}" for doc in context_docs)
+        context_section = "\n\nRelevant station guidelines:\n" + "\n".join(f"- {doc}" for doc in context_docs)
 
     transcript_section = ""
     if transcript_context:
-        # Truncate to first 3000 chars to stay within limits
         truncated = transcript_context[:3000]
         transcript_section = f"\n\nCurrent transcript (excerpt):\n{truncated}"
 
@@ -77,55 +66,13 @@ async def generate_coaching(query: str, context_docs: list[str], production_stat
 
 Producer's question: {query}"""
 
-    headers = {}
-    url = ""
-    body = {}
+    text = await call_llm(COACHING_SYSTEM_PROMPT, user_message, max_tokens=2048, timeout=60.0)
 
-    if GRADIENT_MODEL_ACCESS_KEY:
-        url = "https://api.gradient.ai/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {GRADIENT_MODEL_ACCESS_KEY}",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": "anthropic-claude-4.5-sonnet",
-            "messages": [
-                {"role": "system", "content": COACHING_SYSTEM_PROMPT},
-                {"role": "user", "content": user_message},
-            ],
-            "max_tokens": 2048,
-        }
-    elif ANTHROPIC_API_KEY:
-        url = "https://api.anthropic.com/v1/messages"
-        headers = {
-            "x-api-key": ANTHROPIC_API_KEY,
-            "anthropic-version": "2023-06-01",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": "claude-sonnet-4-5-20241022",
-            "max_tokens": 2048,
-            "system": COACHING_SYSTEM_PROMPT,
-            "messages": [{"role": "user", "content": user_message}],
-        }
-    else:
-        logger.warning("No API key configured — returning stub coaching")
-        return (
-            f"Great question about '{query}'. As you're in the {current_step} stage, "
-            "focus on finding the strongest emotional thread in your transcript. "
-            "Look for the moment where your subject's voice changes — that's usually "
-            "where the real story lives. Lead with that moment, then build context around it."
-        )
+    if text is None:
+        logger.warning("All LLM providers failed — returning stub coaching")
+        return f"Great question about '{query}'. As you're in the {current_step} stage, {STUB_RESPONSE}"
 
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        response = await client.post(url, headers=headers, json=body)
-        response.raise_for_status()
-        data = response.json()
-
-    if GRADIENT_MODEL_ACCESS_KEY:
-        return data["choices"][0]["message"]["content"]
-    else:
-        return data["content"][0]["text"]
+    return text
 
 
 async def coach_agent(input_data: dict, context: dict) -> dict:
@@ -133,7 +80,6 @@ async def coach_agent(input_data: dict, context: dict) -> dict:
     query = input_data.get("query", "")
     production_state = input_data.get("production_state", {})
 
-    # Include transcript context in production state for the LLM
     if "transcript_context" in input_data:
         production_state["transcript_context"] = input_data["transcript_context"]
 
