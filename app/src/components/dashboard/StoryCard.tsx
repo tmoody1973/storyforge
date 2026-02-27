@@ -16,8 +16,8 @@ interface StoryCardProps {
 }
 
 const stationColors: Record<string, string> = {
-  "88Nine Radio Milwaukee": "bg-blue-500/20 text-blue-400",
-  HYFIN: "bg-purple-500/20 text-purple-400",
+  "88Nine Radio Milwaukee": "bg-brand-orange/20 text-brand-orange",
+  HYFIN: "bg-brand-blue/20 text-brand-blue-light",
 };
 
 function sourceLabel(status: string, total: number, ready: number): string {
@@ -40,22 +40,22 @@ export default function StoryCard({
 
   return (
     <Card
-      className="bg-zinc-900 border-zinc-800 hover:border-zinc-700 cursor-pointer transition-colors"
+      className="bg-background border-border hover:border-charcoal-border cursor-pointer transition-colors"
       onClick={() => navigate(`/story/${id}`)}
     >
       <CardContent className="p-3 space-y-2">
-        <h3 className="text-sm font-medium text-zinc-100 line-clamp-2">
+        <h3 className="text-sm font-medium text-foreground line-clamp-2">
           {title}
         </h3>
 
         <Badge
           variant="outline"
-          className={`text-[10px] px-1.5 py-0 h-4 ${stationColors[stationName] ?? "bg-zinc-800 text-zinc-400"}`}
+          className={`text-[10px] px-1.5 py-0 h-4 ${stationColors[stationName] ?? "bg-card text-cream-dim"}`}
         >
           {stationName}
         </Badge>
 
-        <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+        <div className="flex items-center gap-1.5 text-xs text-cream-faint">
           {status === "draft" && totalSources === 0 ? (
             <>
               <Plus className="h-3 w-3" />
@@ -70,15 +70,15 @@ export default function StoryCard({
         </div>
 
         {status === "transcribing" && totalSources > 0 && (
-          <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+          <div className="h-1 bg-card rounded-full overflow-hidden">
             <div
-              className="h-full bg-blue-500 rounded-full transition-all"
+              className="h-full bg-brand-orange rounded-full transition-all"
               style={{ width: `${(readySources / totalSources) * 100}%` }}
             />
           </div>
         )}
 
-        <p className="text-[10px] text-zinc-600">
+        <p className="text-[10px] text-cream-faint">
           {publishedDate
             ? new Date(publishedDate).toLocaleDateString()
             : new Date(createdAt).toLocaleDateString()}

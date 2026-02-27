@@ -47,7 +47,7 @@ export default function NewStoryDialog() {
           New Story
         </Button>
       </DialogTrigger>
-      <DialogContent className="bg-zinc-900 border-zinc-800">
+      <DialogContent className="bg-background border-border">
         <DialogHeader>
           <DialogTitle>Create a New Story</DialogTitle>
         </DialogHeader>
@@ -59,16 +59,16 @@ export default function NewStoryDialog() {
               placeholder="e.g. Milwaukee's Vanishing Jazz Clubs"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="bg-zinc-800 border-zinc-700"
+              className="bg-card border-charcoal-border"
             />
           </div>
           <div className="space-y-2">
             <Label>Station</Label>
             <Select value={stationId} onValueChange={setStationId}>
-              <SelectTrigger className="bg-zinc-800 border-zinc-700">
+              <SelectTrigger className="bg-card border-charcoal-border">
                 <SelectValue placeholder="Select a station" />
               </SelectTrigger>
-              <SelectContent className="bg-zinc-900 border-zinc-800">
+              <SelectContent className="bg-background border-border">
                 {stations?.map((station) => (
                   <SelectItem key={station._id} value={station._id}>
                     {station.name}

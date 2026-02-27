@@ -20,12 +20,12 @@ export default function AppShell() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="flex h-screen bg-zinc-950 text-zinc-100">
+    <div className="flex h-screen bg-background text-foreground">
       {/* Sidebar */}
-      <aside className="w-64 border-r border-zinc-800 flex flex-col">
-        <div className="p-4 border-b border-zinc-800">
+      <aside className="w-64 border-r border-border flex flex-col">
+        <div className="p-4 border-b border-border">
           <Link to="/" className="flex items-center gap-2">
-            <Radio className="h-6 w-6 text-blue-500" />
+            <Radio className="h-6 w-6 text-brand-orange" />
             <span className="text-lg font-bold">StoryForge</span>
           </Link>
         </div>
@@ -38,8 +38,8 @@ export default function AppShell() {
                 to={item.to}
                 className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
                   isActive
-                    ? "bg-zinc-800 text-white"
-                    : "text-zinc-400 hover:text-white hover:bg-zinc-800/50"
+                    ? "bg-card text-foreground"
+                    : "text-cream-dim hover:text-foreground hover:bg-charcoal-surface"
                 }`}
               >
                 <item.icon className="h-4 w-4" />

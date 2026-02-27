@@ -40,7 +40,7 @@ export function WaveformPanel({
   const duration = wavesurferControls?.duration ?? 0;
 
   return (
-    <div className="bg-zinc-900/50 border-b border-zinc-800 px-4 py-3">
+    <div className="bg-charcoal-surface/50 border-b border-border px-4 py-3">
       <div className="flex items-center gap-3">
         {/* Play / Pause */}
         <Button
@@ -67,13 +67,13 @@ export function WaveformPanel({
         </Button>
 
         {/* Time display */}
-        <span className="font-mono text-sm text-zinc-300 tabular-nums">
+        <span className="font-mono text-sm text-cream-muted tabular-nums">
           {formatTime(currentTime)} / {formatTime(duration)}
         </span>
 
         {/* Volume */}
         <div className="ml-auto flex items-center gap-2">
-          <Volume2 className="size-4 text-zinc-400" />
+          <Volume2 className="size-4 text-cream-dim" />
           <Slider
             className="w-24"
             defaultValue={[80]}

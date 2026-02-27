@@ -50,9 +50,9 @@ export default function AnalysisCards({
     <ScrollArea className="h-full">
       <div className="space-y-4 p-1">
         {/* Story Angles Card */}
-        <Card className="bg-zinc-900 border-zinc-800">
+        <Card className="bg-background border-border">
           <CardHeader>
-            <CardTitle className="text-sm text-zinc-300">
+            <CardTitle className="text-sm text-cream-muted">
               Story Angles
             </CardTitle>
           </CardHeader>
@@ -60,14 +60,14 @@ export default function AnalysisCards({
             {storyAngles.map((item) => (
               <div key={item.angle} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-zinc-200">{item.angle}</span>
-                  <span className="text-zinc-400">
+                  <span className="text-cream">{item.angle}</span>
+                  <span className="text-cream-dim">
                     {Math.round(item.strength * 100)}%
                   </span>
                 </div>
-                <div className="h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                <div className="h-1.5 bg-card rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-blue-500 rounded-full transition-all"
+                    className="h-full bg-brand-orange rounded-full transition-all"
                     style={{ width: `${item.strength * 100}%` }}
                   />
                 </div>
@@ -77,22 +77,22 @@ export default function AnalysisCards({
         </Card>
 
         {/* Key Quotes Card */}
-        <Card className="bg-zinc-900 border-zinc-800">
+        <Card className="bg-background border-border">
           <CardHeader>
-            <CardTitle className="text-sm text-zinc-300">Key Quotes</CardTitle>
+            <CardTitle className="text-sm text-cream-muted">Key Quotes</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
             {keyQuotes.map((quote) => (
               <div
                 key={`${quote.start}-${quote.text.slice(0, 20)}`}
-                className="p-2 rounded bg-zinc-800/50 hover:bg-zinc-800 cursor-pointer transition-colors"
+                className="p-2 rounded bg-charcoal-surface hover:bg-card cursor-pointer transition-colors"
                 onClick={() => onSeek(quote.start)}
               >
-                <p className="text-xs text-zinc-200 italic">
+                <p className="text-xs text-cream italic">
                   &ldquo;{quote.text}&rdquo;
                 </p>
                 <div className="flex items-center gap-2 mt-1">
-                  <span className="text-[10px] text-zinc-500">
+                  <span className="text-[10px] text-cream-faint">
                     {formatTimestamp(quote.start)}
                   </span>
                   <Badge
@@ -108,9 +108,9 @@ export default function AnalysisCards({
         </Card>
 
         {/* Emotional Arc Card */}
-        <Card className="bg-zinc-900 border-zinc-800">
+        <Card className="bg-background border-border">
           <CardHeader>
-            <CardTitle className="text-sm text-zinc-300">
+            <CardTitle className="text-sm text-cream-muted">
               Emotional Arc
             </CardTitle>
           </CardHeader>
@@ -128,8 +128,8 @@ export default function AnalysisCards({
                   x2="0"
                   y2="1"
                 >
-                  <stop offset="0%" stopColor="#4A9EFF" stopOpacity={0.3} />
-                  <stop offset="100%" stopColor="#4A9EFF" stopOpacity={0.05} />
+                  <stop offset="0%" stopColor="#F8971D" stopOpacity={0.3} />
+                  <stop offset="100%" stopColor="#F8971D" stopOpacity={0.05} />
                 </linearGradient>
               </defs>
 
@@ -145,7 +145,7 @@ export default function AnalysisCards({
                   <polyline
                     points={polylinePoints}
                     fill="none"
-                    stroke="#4A9EFF"
+                    stroke="#F8971D"
                     strokeWidth={2}
                   />
 
@@ -156,7 +156,7 @@ export default function AnalysisCards({
                       cx={point.x}
                       cy={point.y}
                       r={2.5}
-                      fill="#4A9EFF"
+                      fill="#F8971D"
                     />
                   ))}
                 </>

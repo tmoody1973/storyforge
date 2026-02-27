@@ -36,14 +36,14 @@ export default function DashboardPage() {
   return (
     <div className="flex flex-col h-full">
       {/* Top bar */}
-      <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800">
+      <div className="flex items-center justify-between px-6 py-4 border-b border-border">
         <h1 className="text-xl font-bold">Story Board</h1>
         <div className="flex items-center gap-3">
           <Select value={stationFilter} onValueChange={setStationFilter}>
-            <SelectTrigger className="w-48 bg-zinc-800 border-zinc-700 text-sm">
+            <SelectTrigger className="w-48 bg-card border-charcoal-border text-sm">
               <SelectValue placeholder="All Stations" />
             </SelectTrigger>
-            <SelectContent className="bg-zinc-900 border-zinc-800">
+            <SelectContent className="bg-background border-border">
               <SelectItem value="all">All Stations</SelectItem>
               {stations?.map((station) => (
                 <SelectItem key={station._id} value={station._id}>
@@ -66,14 +66,14 @@ export default function DashboardPage() {
           return (
             <div
               key={col.status}
-              className="flex-1 min-w-[240px] border-r border-zinc-800 last:border-r-0 flex flex-col"
+              className="flex-1 min-w-[240px] border-r border-border last:border-r-0 flex flex-col"
             >
-              <div className="px-4 py-3 border-b border-zinc-800">
+              <div className="px-4 py-3 border-b border-border">
                 <div className="flex items-center gap-2">
-                  <h2 className="text-xs font-semibold uppercase text-zinc-400">
+                  <h2 className="text-xs font-semibold uppercase text-cream-dim">
                     {col.label}
                   </h2>
-                  <span className="text-[10px] text-zinc-600 bg-zinc-800 px-1.5 py-0.5 rounded-full">
+                  <span className="text-[10px] text-cream-faint bg-card px-1.5 py-0.5 rounded-full">
                     {colStories?.length ?? 0}
                   </span>
                 </div>

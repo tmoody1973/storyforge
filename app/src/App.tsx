@@ -13,7 +13,7 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthLoading>
-        <div className="flex items-center justify-center h-screen bg-zinc-950 text-white">
+        <div className="flex items-center justify-center h-screen bg-background text-foreground">
           Loading...
         </div>
       </AuthLoading>

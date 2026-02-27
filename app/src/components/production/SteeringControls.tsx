@@ -59,16 +59,16 @@ export default function SteeringControls({
   };
 
   return (
-    <div className="p-4 space-y-3 border-t border-zinc-800">
-      <h3 className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">
+    <div className="p-4 space-y-3 border-t border-border">
+      <h3 className="text-xs font-semibold text-cream-dim uppercase tracking-wider">
         Steering
       </h3>
 
       {/* Angle selector */}
       <div className="space-y-1">
-        <Label className="text-xs text-zinc-400">Angle</Label>
+        <Label className="text-xs text-cream-dim">Angle</Label>
         <Select value={selectedAngle ?? ""} onValueChange={handleAngleChange}>
-          <SelectTrigger className="bg-zinc-800 border-zinc-700 text-zinc-200 h-8 text-xs">
+          <SelectTrigger className="bg-card border-charcoal-border text-cream h-8 text-xs">
             <SelectValue placeholder="Select angle" />
           </SelectTrigger>
           <SelectContent>
@@ -83,25 +83,25 @@ export default function SteeringControls({
 
       {/* Emotional tone input */}
       <div className="space-y-1">
-        <Label className="text-xs text-zinc-400">Emotional Tone</Label>
+        <Label className="text-xs text-cream-dim">Emotional Tone</Label>
         <Input
           value={tone}
           onChange={(e) => setTone(e.target.value)}
           onBlur={handleToneBlur}
           placeholder="e.g. hopeful, urgent, reflective"
-          className="bg-zinc-800 border-zinc-700 text-zinc-200 h-8 text-xs placeholder:text-zinc-500"
+          className="bg-card border-charcoal-border text-cream h-8 text-xs placeholder:text-cream-faint"
         />
       </div>
 
       {/* Narrative direction input */}
       <div className="space-y-1">
-        <Label className="text-xs text-zinc-400">Narrative Direction</Label>
+        <Label className="text-xs text-cream-dim">Narrative Direction</Label>
         <Input
           value={direction}
           onChange={(e) => setDirection(e.target.value)}
           onBlur={handleDirectionBlur}
           placeholder="e.g. focus on community impact"
-          className="bg-zinc-800 border-zinc-700 text-zinc-200 h-8 text-xs placeholder:text-zinc-500"
+          className="bg-card border-charcoal-border text-cream h-8 text-xs placeholder:text-cream-faint"
         />
       </div>
     </div>
