@@ -178,6 +178,8 @@ export default function ProductionPage() {
                 currentTime={ws.currentTime}
                 onSeek={ws.seek}
                 fillerWords={fillerWords}
+                sourceTitle={selectedSource?.title}
+                durationSeconds={selectedSource?.durationSeconds ?? undefined}
               />
             ) : (
               <div className="flex items-center justify-center h-full text-cream-faint text-sm">

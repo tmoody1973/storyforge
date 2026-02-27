@@ -1,4 +1,5 @@
 import { useMemo, useEffect, useRef, useState } from "react";
+import { Download } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -9,6 +10,7 @@ import {
   formatTimestamp,
 } from "@/lib/transcript";
 import type { Speaker, WordTimestamp } from "@/lib/transcript";
+import { exportTranscriptMarkdown } from "@/lib/exportTranscript";
 
 interface TranscriptPanelProps {
   transcriptId?: string;
@@ -23,6 +25,8 @@ interface TranscriptPanelProps {
     end: number;
     speaker: string;
   }>;
+  sourceTitle?: string;
+  durationSeconds?: number;
 }
 
 export default function TranscriptPanel({
@@ -32,6 +36,8 @@ export default function TranscriptPanel({
   wordTimestamps,
   currentTime,
   onSeek,
+  sourceTitle,
+  durationSeconds,
 }: TranscriptPanelProps) {
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
@@ -51,10 +57,25 @@ export default function TranscriptPanel({
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
-      <div className="px-4 py-3 shrink-0">
+      <div className="px-4 py-3 shrink-0 flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase text-cream-dim">
           Transcript
         </h2>
+        <button
+          onClick={() =>
+            exportTranscriptMarkdown({
+              title: sourceTitle ?? "Transcript",
+              markdown,
+              speakers,
+              wordTimestamps,
+              durationSeconds,
+            })
+          }
+          className="text-cream-faint hover:text-brand-orange transition-colors"
+          title="Export as Markdown"
+        >
+          <Download className="h-4 w-4" />
+        </button>
       </div>
 
       <ScrollArea className="flex-1 overflow-hidden">
