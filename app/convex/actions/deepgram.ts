@@ -184,16 +184,21 @@ export const transcribe = action({
       // -------------------------------------------------------------------
       // Save transcript via internal mutation
       // -------------------------------------------------------------------
+      // Convex has an 8192 array length limit — truncate if needed
+      const maxWords = 8000;
+      const truncatedWords = words.length > maxWords ? words.slice(0, maxWords) : words;
+      const truncatedFillers = fillerWords.length > maxWords ? fillerWords.slice(0, maxWords) : fillerWords;
+
       await ctx.runMutation(internal.transcripts.insertFromDeepgram, {
         storyId: args.storyId,
         sourceId: args.sourceId,
         markdown,
         speakers,
         durationSeconds,
-        wordTimestamps: words,
-        fillerWords,
+        wordTimestamps: truncatedWords,
+        fillerWords: truncatedFillers,
         searchableText,
-        rawSttJson: data,
+        rawSttJson: {},  // Skip raw JSON to avoid size limits
       });
     } catch (error) {
       console.error("Deepgram transcription failed:", error);

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -34,6 +35,8 @@ export default function SourcePanel({
 }: SourcePanelProps) {
   const sources = useQuery(api.sources.listByStory, { storyId });
   const retryTranscription = useMutation(api.sources.retryTranscription);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isUploading, setIsUploading] = useState(false);
 
   return (
     <div className="border-b border-border">
@@ -43,12 +46,23 @@ export default function SourcePanel({
         </h3>
         <UploadButton
           endpoint="audioUploader"
+          onUploadBegin={() => {
+            setIsUploading(true);
+            setUploadProgress(0);
+          }}
+          onUploadProgress={(progress) => {
+            setUploadProgress(progress);
+          }}
           onClientUploadComplete={(res) => {
+            setIsUploading(false);
+            setUploadProgress(0);
             if (res?.[0]) {
               onUploadComplete(res[0].ufsUrl, res[0].name);
             }
           }}
           onUploadError={(error) => {
+            setIsUploading(false);
+            setUploadProgress(0);
             console.error("Upload error:", error);
           }}
           appearance={{
@@ -57,10 +71,25 @@ export default function SourcePanel({
             allowedContent: "hidden",
           }}
           content={{
-            button: "Add Audio",
+            button: isUploading ? `${uploadProgress}%` : "Add Audio",
           }}
         />
       </div>
+
+      {isUploading && (
+        <div className="px-4 pb-2">
+          <div className="flex items-center gap-2 text-xs text-cream-dim mb-1">
+            <Loader2 className="h-3 w-3 animate-spin text-brand-orange" />
+            Uploading... {uploadProgress}%
+          </div>
+          <div className="h-1 bg-charcoal-surface rounded-full overflow-hidden">
+            <div
+              className="h-full bg-brand-orange rounded-full transition-all duration-300"
+              style={{ width: `${uploadProgress}%` }}
+            />
+          </div>
+        </div>
+      )}
 
       {sources && sources.length > 0 && (
         <ScrollArea className="max-h-32">
@@ -73,10 +102,13 @@ export default function SourcePanel({
                 source.status === "transcribing";
 
               return (
-                <button
+                <div
                   key={source._id}
+                  role="button"
+                  tabIndex={0}
                   onClick={() => onSelectSource(source._id)}
-                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-colors ${
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onSelectSource(source._id); }}
+                  className={`w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-xs transition-colors cursor-pointer ${
                     isSelected
                       ? "bg-card ring-1 ring-charcoal-border"
                       : "hover:bg-charcoal-surface"
@@ -110,7 +142,7 @@ export default function SourcePanel({
                       <RotateCcw className="h-3.5 w-3.5" />
                     </button>
                   )}
-                </button>
+                </div>
               );
             })}
           </div>

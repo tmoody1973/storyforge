@@ -124,6 +124,34 @@ export const updateSteering = mutation({
   },
 });
 
+export const remove = mutation({
+  args: { id: v.id("stories") },
+  handler: async (ctx, args) => {
+    // Delete all sources for this story
+    const sources = await ctx.db
+      .query("sources")
+      .withIndex("by_story", (q) => q.eq("storyId", args.id))
+      .collect();
+    for (const source of sources) {
+      // Delete transcript if linked
+      if (source.transcriptId) {
+        await ctx.db.delete(source.transcriptId);
+      }
+      await ctx.db.delete(source._id);
+    }
+    // Delete any transcripts linked by storyId
+    const transcripts = await ctx.db
+      .query("transcripts")
+      .withIndex("by_story", (q) => q.eq("storyId", args.id))
+      .collect();
+    for (const t of transcripts) {
+      await ctx.db.delete(t._id);
+    }
+    // Delete the story
+    await ctx.db.delete(args.id);
+  },
+});
+
 export const saveGeneratedContent = mutation({
   args: {
     storyId: v.id("stories"),

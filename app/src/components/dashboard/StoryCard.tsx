@@ -1,7 +1,9 @@
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { FileAudio, Plus } from "lucide-react";
+import { FileAudio, Plus, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router";
+import { useMutation } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 
 interface StoryCardProps {
@@ -37,14 +39,27 @@ export default function StoryCard({
   publishedDate,
 }: StoryCardProps) {
   const navigate = useNavigate();
+  const removeStory = useMutation(api.stories.remove);
 
   return (
     <Card
-      className="bg-background border-border hover:border-charcoal-border cursor-pointer transition-colors"
+      className="group bg-background border-border hover:border-charcoal-border cursor-pointer transition-colors relative"
       onClick={() => navigate(`/story/${id}`)}
     >
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          if (window.confirm(`Delete "${title}"? This will remove all sources and transcripts.`)) {
+            removeStory({ id });
+          }
+        }}
+        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-red-500/20 text-cream-faint hover:text-red-400"
+        title="Delete story"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
       <CardContent className="p-3 space-y-2">
-        <h3 className="text-sm font-medium text-foreground line-clamp-2">
+        <h3 className="text-sm font-medium text-foreground line-clamp-2 pr-6">
           {title}
         </h3>
 
