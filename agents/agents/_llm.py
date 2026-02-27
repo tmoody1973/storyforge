@@ -16,8 +16,8 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 GRADIENT_URL = "https://inference.do-ai.run/v1/chat/completions"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 
-# Ordered preference: Claude 4.6 Sonnet, llama3.3 fallback
-GRADIENT_MODELS = ["anthropic-claude-4.6-sonnet", "llama3.3-70b-instruct"]
+# Ordered preference: GPT-OSS-120B (default), Claude 4.6 Sonnet (BYOK), llama3.3 fallback
+GRADIENT_MODELS = ["openai-gpt-oss-120b", "anthropic-claude-4.6-sonnet", "llama3.3-70b-instruct"]
 
 
 async def call_llm(
