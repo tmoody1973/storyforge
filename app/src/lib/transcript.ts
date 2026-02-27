@@ -68,16 +68,24 @@ export function parseTranscriptMarkdown(
     timestampGroups.push(currentGroup);
   }
 
-  const speakerPattern = /^\*\*(.+?):\*\*\s*(.*)$/s;
+  // Match both formats:
+  //   **Name:** text on same line
+  //   **Name** (0:12)\ntext on next line
+  const speakerPattern =
+    /^\*\*(.+?)(?::)?\*\*(?:\s*(?:\([^)]*\)\s*)?\n?|\s*)(.*)$/s;
 
   const segments: TranscriptSegment[] = [];
 
   for (let i = 0; i < paragraphs.length; i++) {
     const para = paragraphs[i];
+
+    // Skip markdown headings
+    if (para.startsWith("#")) continue;
+
     const match = speakerPattern.exec(para);
 
     const speakerName = match ? match[1] : "Unknown";
-    const text = match ? match[2] : para;
+    const text = match ? match[2].trim() : para;
     const speaker = speakerByName.get(speakerName);
 
     // Use matching timestamp group by paragraph index for time boundaries

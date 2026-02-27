@@ -38,18 +38,20 @@ export default function ProductionPage() {
   useEffect(() => {
     if (!transcript?.keyQuotes || !ws.isReady) return;
     ws.clearRegions();
-    for (const quote of transcript.keyQuotes as Array<{
-      text: string;
+    const quotes = transcript.keyQuotes as Array<{
       start: number;
       end: number;
-      theme: string;
-    }>) {
+      theme?: string;
+      themes?: string[];
+    }>;
+    for (const q of quotes) {
+      const label = q.theme ?? (q.themes ? q.themes[0] : "");
       ws.addRegion({
-        id: `quote-${quote.start}`,
-        start: quote.start,
-        end: quote.end,
+        id: `quote-${q.start}`,
+        start: q.start,
+        end: q.end,
         color: "rgba(74, 158, 255, 0.15)",
-        content: quote.theme,
+        content: label,
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -73,17 +75,32 @@ export default function ProductionPage() {
 
   const speakers = (transcript?.speakers ?? []) as Speaker[];
   const wordTimestamps = (transcript?.wordTimestamps ?? []) as WordTimestamp[];
-  const storyAngles = (transcript?.storyAngles ?? []) as Array<{
+  const rawAngles = (transcript?.storyAngles ?? []) as Array<{
     angle: string;
-    strength: number;
-    reasoning: string;
+    strength?: number;
+    confidence?: number;
+    reasoning?: string;
+    description?: string;
   }>;
-  const keyQuotes = (transcript?.keyQuotes ?? []) as Array<{
+  const storyAngles = rawAngles.map((a) => ({
+    angle: a.angle,
+    strength: a.strength ?? a.confidence ?? 0,
+    reasoning: a.reasoning ?? a.description ?? "",
+  }));
+
+  const rawQuotes = (transcript?.keyQuotes ?? []) as Array<{
     text: string;
     start: number;
     end: number;
-    theme: string;
+    theme?: string;
+    themes?: string[];
   }>;
+  const keyQuotes = rawQuotes.map((q) => ({
+    text: q.text,
+    start: q.start,
+    end: q.end,
+    theme: q.theme ?? (q.themes ? q.themes[0] : ""),
+  }));
   const emotionalArc = (transcript?.emotionalArc ?? []) as Array<{
     time: number;
     intensity: number;
