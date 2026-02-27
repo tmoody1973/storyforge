@@ -50,14 +50,14 @@ export default function TranscriptPanel({
   }, [activeIndex]);
 
   return (
-    <div className="flex h-full flex-col">
-      <div className="px-4 py-3">
+    <div className="flex h-full flex-col overflow-hidden">
+      <div className="px-4 py-3 shrink-0">
         <h2 className="text-sm font-semibold uppercase text-cream-dim">
           Transcript
         </h2>
       </div>
 
-      <ScrollArea className="flex-1">
+      <ScrollArea className="flex-1 overflow-hidden">
         <div className="space-y-1 px-2 pb-4">
           {segments.map((segment, i) => {
             const isActive = i === activeIndex;
