@@ -13,6 +13,7 @@ interface ChatMessage {
 
 interface CoachChatProps {
   storyId: string;
+  transcriptMarkdown?: string;
 }
 
 const INITIAL_MESSAGE: ChatMessage = {
@@ -21,7 +22,7 @@ const INITIAL_MESSAGE: ChatMessage = {
     "I'm your Story Coach. I can help you find the best angle, refine your narrative, and craft compelling content. What would you like to work on?",
 };
 
-export default function CoachChat({ storyId }: CoachChatProps) {
+export default function CoachChat({ storyId, transcriptMarkdown }: CoachChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -47,7 +48,11 @@ export default function CoachChat({ storyId }: CoachChatProps) {
     try {
       const result = await callAgent({
         agent: "coach",
-        payload: { storyId, message: trimmed },
+        payload: {
+          query: trimmed,
+          production_state: { step: "editing" },
+          transcript_context: transcriptMarkdown,
+        },
       });
       const coaching =
         (result as { coaching?: string }).coaching ??
@@ -81,8 +86,8 @@ export default function CoachChat({ storyId }: CoachChatProps) {
               <div
                 className={`max-w-[80%] rounded-lg px-3 py-2 text-sm ${
                   msg.role === "user"
-                    ? "bg-blue-600 text-white"
-                    : "bg-zinc-800 text-zinc-300"
+                    ? "bg-brand-orange text-foreground"
+                    : "bg-card text-cream-muted"
                 }`}
               >
                 {msg.content}
@@ -92,7 +97,7 @@ export default function CoachChat({ storyId }: CoachChatProps) {
 
           {isLoading && (
             <div className="flex justify-start">
-              <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-zinc-800 text-zinc-500">
+              <div className="max-w-[80%] rounded-lg px-3 py-2 text-sm bg-card text-cream-faint">
                 Thinking...
               </div>
             </div>
@@ -102,12 +107,12 @@ export default function CoachChat({ storyId }: CoachChatProps) {
         </div>
       </ScrollArea>
 
-      <form onSubmit={handleSubmit} className="flex items-center gap-2 p-3 border-t border-zinc-800">
+      <form onSubmit={handleSubmit} className="flex items-center gap-2 p-3 border-t border-border">
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Ask your coach..."
-          className="bg-zinc-800 border-zinc-700 text-zinc-200 placeholder:text-zinc-500"
+          className="bg-card border-charcoal-border text-cream placeholder:text-cream-faint"
           disabled={isLoading}
         />
         <Button type="submit" variant="ghost" size="icon" disabled={isLoading || !input.trim()}>

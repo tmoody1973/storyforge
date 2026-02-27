@@ -200,6 +200,7 @@ export default function ProductionPage() {
             emotionalTone={story.emotionalTone}
             narrativeDirection={story.narrativeDirection}
             onSeek={ws.seek}
+            transcriptMarkdown={transcript?.markdown}
           />
         </div>
       </div>
