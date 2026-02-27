@@ -20,9 +20,16 @@ export default function ProductionPage() {
   // ---------------------------------------------------------------------------
 
   const story = useQuery(api.stories.get, { id: storyId });
-  const transcript = useQuery(api.transcripts.getByStory, { storyId });
   const sources = useQuery(api.sources.listByStory, storyId ? { storyId } : "skip");
   const [selectedSourceId, setSelectedSourceId] = useState<Id<"sources"> | null>(null);
+  const transcript = useQuery(
+    api.transcripts.getBySource,
+    selectedSourceId ? { sourceId: selectedSourceId } : "skip",
+  );
+  const selectedSource = useQuery(
+    api.sources.get,
+    selectedSourceId ? { id: selectedSourceId } : "skip",
+  );
   const createSource = useMutation(api.sources.create);
 
   // Auto-select first source
@@ -83,7 +90,7 @@ export default function ProductionPage() {
 
   if (!story) {
     return (
-      <div className="flex items-center justify-center h-full bg-zinc-950 text-zinc-400">
+      <div className="flex items-center justify-center h-full bg-background text-cream-dim">
         Loading story...
       </div>
     );
@@ -137,7 +144,7 @@ export default function ProductionPage() {
   // ---------------------------------------------------------------------------
 
   return (
-    <div className="flex flex-col h-full bg-zinc-950">
+    <div className="flex flex-col h-full bg-background">
       <StoryHeader title={story.title} status={story.status} />
 
       <WaveformPanel
@@ -148,12 +155,12 @@ export default function ProductionPage() {
       />
       <div
         ref={waveformRef}
-        className="px-4 pb-3 bg-zinc-900/50 border-b border-zinc-800"
+        className="px-4 pb-3 bg-charcoal-surface/50 border-b border-border"
       />
 
       <div className="flex flex-1 min-h-0">
         {/* Left panel: Sources + Transcript */}
-        <div className="w-[55%] border-r border-zinc-800 overflow-hidden flex flex-col">
+        <div className="w-[55%] border-r border-border overflow-hidden flex flex-col">
           <SourcePanel
             storyId={storyId}
             selectedSourceId={selectedSourceId}
@@ -171,7 +178,7 @@ export default function ProductionPage() {
                 fillerWords={fillerWords}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-zinc-500 text-sm">
+              <div className="flex items-center justify-center h-full text-cream-faint text-sm">
                 No transcript available yet.
               </div>
             )}

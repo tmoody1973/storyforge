@@ -11,6 +11,15 @@ export const getByStory = query({
   },
 });
 
+export const getBySource = query({
+  args: { sourceId: v.id("sources") },
+  handler: async (ctx, args) => {
+    const source = await ctx.db.get(args.sourceId);
+    if (!source?.transcriptId) return null;
+    return await ctx.db.get(source.transcriptId);
+  },
+});
+
 export const search = query({
   args: { searchText: v.string() },
   handler: async (ctx, args) => {
