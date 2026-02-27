@@ -70,3 +70,33 @@ export const callAgent = action({
     return data.result ?? data;
   },
 });
+
+export const analyzeTranscript = action({
+  args: {
+    transcriptId: v.id("transcripts"),
+    storyId: v.id("stories"),
+    markdown: v.string(),
+    wordTimestamps: v.any(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const result = await ctx.runAction(api.actions.gradientAgent.callAgent, {
+        agent: "transcript",
+        payload: {
+          transcript: args.markdown,
+          word_timestamps: args.wordTimestamps,
+        },
+      });
+
+      await ctx.runMutation(internal.transcripts.saveAnalysis, {
+        transcriptId: args.transcriptId,
+        storyAngles: result.story_angles ?? result.storyAngles ?? [],
+        keyQuotes: result.key_quotes ?? result.keyQuotes ?? [],
+        emotionalArc: result.emotional_arc ?? result.emotionalArc ?? [],
+      });
+    } catch (error) {
+      console.error("Transcript analysis failed:", error);
+      // Non-fatal — transcript still exists, just no analysis
+    }
+  },
+});

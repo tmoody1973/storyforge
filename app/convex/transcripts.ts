@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query, mutation, internalMutation } from "./_generated/server";
+import { api } from "./_generated/api";
 
 export const getByStory = query({
   args: { storyId: v.id("stories") },
@@ -79,7 +80,31 @@ export const insertFromDeepgram = internalMutation({
       }
     }
 
+    // Schedule AI analysis of the transcript
+    await ctx.scheduler.runAfter(0, api.actions.gradientAgent.analyzeTranscript, {
+      transcriptId,
+      storyId: args.storyId,
+      markdown: args.markdown,
+      wordTimestamps: args.wordTimestamps,
+    });
+
     return transcriptId;
+  },
+});
+
+export const saveAnalysis = internalMutation({
+  args: {
+    transcriptId: v.id("transcripts"),
+    storyAngles: v.any(),
+    keyQuotes: v.any(),
+    emotionalArc: v.any(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.transcriptId, {
+      storyAngles: args.storyAngles,
+      keyQuotes: args.keyQuotes,
+      emotionalArc: args.emotionalArc,
+    });
   },
 });
 
