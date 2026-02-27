@@ -36,6 +36,28 @@ export const get = query({
   },
 });
 
+export const listWithSourceCounts = query({
+  handler: async (ctx) => {
+    const stories = await ctx.db.query("stories").order("desc").take(100);
+
+    const withCounts = await Promise.all(
+      stories.map(async (story) => {
+        const sources = await ctx.db
+          .query("sources")
+          .withIndex("by_story", (q) => q.eq("storyId", story._id))
+          .collect();
+
+        const totalSources = sources.length;
+        const readySources = sources.filter((s) => s.status === "ready").length;
+
+        return { ...story, totalSources, readySources };
+      })
+    );
+
+    return withCounts;
+  },
+});
+
 export const create = mutation({
   args: {
     title: v.string(),
@@ -45,20 +67,30 @@ export const create = mutation({
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) throw new Error("Not authenticated");
 
-    const user = await ctx.db
+    // Try finding user by email (works for both Clerk and WorkOS)
+    let user = await ctx.db
       .query("users")
-      .withIndex("by_workos_id", (q) =>
-        q.eq("workosUserId", identity.subject)
-      )
+      .withIndex("by_email", (q) => q.eq("email", identity.email!))
       .unique();
 
-    if (!user) throw new Error("User not found");
+    // Auto-create user if not found
+    if (!user) {
+      const userId = await ctx.db.insert("users", {
+        workosUserId: identity.subject,
+        name: identity.name ?? "Unknown",
+        email: identity.email!,
+        role: "producer",
+        stations: [],
+        lastActiveAt: Date.now(),
+      });
+      user = (await ctx.db.get(userId))!;
+    }
 
     return await ctx.db.insert("stories", {
       title: args.title,
       stationId: args.stationId,
       creatorId: user._id,
-      status: "transcribing",
+      status: "draft",
     });
   },
 });
