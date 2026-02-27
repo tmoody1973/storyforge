@@ -123,3 +123,22 @@ export const updateSteering = mutation({
     await ctx.db.patch(id, filtered);
   },
 });
+
+export const saveGeneratedContent = mutation({
+  args: {
+    storyId: v.id("stories"),
+    airBreak: v.optional(v.any()),
+    podcastSegment: v.optional(v.any()),
+    socialThread: v.optional(v.any()),
+    webArticle: v.optional(v.any()),
+    newsletterCopy: v.optional(v.any()),
+    pressRelease: v.optional(v.any()),
+  },
+  handler: async (ctx, args) => {
+    const { storyId, ...content } = args;
+    const filtered = Object.fromEntries(
+      Object.entries(content).filter(([_, v]) => v !== undefined)
+    );
+    await ctx.db.patch(storyId, filtered);
+  },
+});
