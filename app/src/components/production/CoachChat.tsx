@@ -14,6 +14,7 @@ interface ChatMessage {
 interface CoachChatProps {
   storyId: string;
   transcriptMarkdown?: string;
+  prefillMessage?: string;
 }
 
 const INITIAL_MESSAGE: ChatMessage = {
@@ -22,13 +23,22 @@ const INITIAL_MESSAGE: ChatMessage = {
     "I'm your Story Coach. I can help you find the best angle, refine your narrative, and craft compelling content. What would you like to work on?",
 };
 
-export default function CoachChat({ storyId, transcriptMarkdown }: CoachChatProps) {
+export default function CoachChat({ storyId, transcriptMarkdown, prefillMessage }: CoachChatProps) {
   const [messages, setMessages] = useState<ChatMessage[]>([INITIAL_MESSAGE]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const lastPrefillRef = useRef<string | undefined>(undefined);
 
   const callAgent = useAction(api.actions.gradientAgent.callAgent);
+
+  // Prefill input when prefillMessage changes
+  useEffect(() => {
+    if (prefillMessage && prefillMessage !== lastPrefillRef.current) {
+      setInput(prefillMessage);
+      lastPrefillRef.current = prefillMessage;
+    }
+  }, [prefillMessage]);
 
   // Auto-scroll to bottom when messages change
   useEffect(() => {

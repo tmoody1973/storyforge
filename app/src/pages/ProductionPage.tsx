@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, useCallback } from "react";
 import { useParams } from "react-router";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
@@ -9,7 +9,11 @@ import { WaveformPanel } from "@/components/production/WaveformPanel";
 import TranscriptPanel from "@/components/production/TranscriptPanel";
 import CoachPanel from "@/components/production/CoachPanel";
 import SourcePanel from "@/components/production/SourcePanel";
+import ScriptEditor from "@/components/production/ScriptEditor";
 import type { Speaker, WordTimestamp } from "@/lib/transcript";
+import type { ProducerScript } from "@/lib/scriptTypes";
+
+type ViewMode = "transcript" | "script";
 
 export default function ProductionPage() {
   const { id } = useParams();
@@ -47,6 +51,17 @@ export default function ProductionPage() {
     });
     setSelectedSourceId(sourceId);
   };
+
+  // ---------------------------------------------------------------------------
+  // View mode toggle: Transcript vs Script
+  // ---------------------------------------------------------------------------
+
+  const [viewMode, setViewMode] = useState<ViewMode>("transcript");
+  const [chatPrefill, setChatPrefill] = useState<string | undefined>();
+
+  const handleAskCoach = useCallback((message: string) => {
+    setChatPrefill(message);
+  }, []);
 
   // ---------------------------------------------------------------------------
   // Waveform
@@ -140,6 +155,8 @@ export default function ProductionPage() {
     speaker: string;
   }>;
 
+  const generatedScript = story.generatedScript as ProducerScript | null | undefined;
+
   // ---------------------------------------------------------------------------
   // Render
   // ---------------------------------------------------------------------------
@@ -160,7 +177,7 @@ export default function ProductionPage() {
       />
 
       <div className="flex flex-1 min-h-0">
-        {/* Left panel: Sources + Transcript */}
+        {/* Left panel: Sources + Transcript/Script */}
         <div className="w-[55%] border-r border-border overflow-hidden flex flex-col">
           <SourcePanel
             storyId={storyId}
@@ -168,8 +185,41 @@ export default function ProductionPage() {
             onSelectSource={setSelectedSourceId}
             onUploadComplete={handleUploadComplete}
           />
+
+          {/* View mode toggle */}
+          {transcript && (
+            <div className="px-4 py-2 border-b border-charcoal-border shrink-0">
+              <div className="inline-flex rounded-lg bg-charcoal-surface p-0.5">
+                <button
+                  onClick={() => setViewMode("transcript")}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    viewMode === "transcript"
+                      ? "bg-card text-cream shadow-sm"
+                      : "text-cream-faint hover:text-cream-muted"
+                  }`}
+                >
+                  Transcript
+                </button>
+                <button
+                  onClick={() => setViewMode("script")}
+                  className={`px-3 py-1 text-xs font-medium rounded-md transition-colors ${
+                    viewMode === "script"
+                      ? "bg-card text-cream shadow-sm"
+                      : "text-cream-faint hover:text-cream-muted"
+                  }`}
+                >
+                  Script
+                </button>
+              </div>
+            </div>
+          )}
+
           <div className="flex-1 overflow-hidden">
-            {transcript ? (
+            {!transcript ? (
+              <div className="flex items-center justify-center h-full text-cream-faint text-sm">
+                No transcript available yet.
+              </div>
+            ) : viewMode === "transcript" ? (
               <TranscriptPanel
                 transcriptId={transcript?._id}
                 markdown={transcript.markdown}
@@ -182,9 +232,15 @@ export default function ProductionPage() {
                 durationSeconds={selectedSource?.durationSeconds ?? undefined}
               />
             ) : (
-              <div className="flex items-center justify-center h-full text-cream-faint text-sm">
-                No transcript available yet.
-              </div>
+              <ScriptEditor
+                storyId={storyId}
+                script={generatedScript ?? null}
+                currentTime={ws.currentTime}
+                onSeek={ws.seek}
+                onAskCoach={handleAskCoach}
+                sourceId={selectedSourceId ?? undefined}
+                storyTitle={story.title}
+              />
             )}
           </div>
         </div>
@@ -201,6 +257,7 @@ export default function ProductionPage() {
             narrativeDirection={story.narrativeDirection}
             onSeek={ws.seek}
             transcriptMarkdown={transcript?.markdown}
+            chatPrefill={chatPrefill}
           />
         </div>
       </div>

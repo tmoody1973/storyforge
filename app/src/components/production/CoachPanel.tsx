@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useAction, useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
@@ -79,6 +79,7 @@ interface CoachPanelProps {
   narrativeDirection?: string;
   onSeek: (time: number) => void;
   transcriptMarkdown?: string;
+  chatPrefill?: string;
 }
 
 export default function CoachPanel({
@@ -91,11 +92,20 @@ export default function CoachPanel({
   narrativeDirection,
   onSeek,
   transcriptMarkdown,
+  chatPrefill,
 }: CoachPanelProps) {
+  const [activeTab, setActiveTab] = useState("analysis");
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedContent, setGeneratedContent] =
     useState<GeneratedContent | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  // When chatPrefill changes, switch to chat tab
+  useEffect(() => {
+    if (chatPrefill) {
+      setActiveTab("chat");
+    }
+  }, [chatPrefill]);
 
   const callAgent = useAction(api.actions.gradientAgent.callAgent);
   const saveContent = useMutation(api.stories.saveGeneratedContent);
@@ -153,7 +163,7 @@ export default function CoachPanel({
 
   return (
     <div className="flex flex-col h-full">
-      <Tabs defaultValue="analysis" className="flex flex-col flex-1 min-h-0">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="flex flex-col flex-1 min-h-0">
         <TabsList className="mx-4 mt-3 bg-charcoal-surface">
           <TabsTrigger value="analysis" className="text-xs">
             Analysis
@@ -179,6 +189,7 @@ export default function CoachPanel({
           <CoachChat
             storyId={storyId as string}
             transcriptMarkdown={transcriptMarkdown}
+            prefillMessage={chatPrefill}
           />
         </TabsContent>
 
