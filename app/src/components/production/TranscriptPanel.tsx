@@ -1,5 +1,6 @@
 import { useMemo, useEffect, useRef, useState } from "react";
-import { Download } from "lucide-react";
+import { Download, Users } from "lucide-react";
+import EditSpeakersModal from "./EditSpeakersModal";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
@@ -18,6 +19,7 @@ interface TranscriptPanelProps {
   speakers: Speaker[];
   wordTimestamps: WordTimestamp[];
   currentTime: number;
+  isPlaying: boolean;
   onSeek: (time: number) => void;
   fillerWords?: Array<{
     word: string;
@@ -35,12 +37,14 @@ export default function TranscriptPanel({
   speakers,
   wordTimestamps,
   currentTime,
+  isPlaying,
   onSeek,
   sourceTitle,
   durationSeconds,
 }: TranscriptPanelProps) {
   const [editingSpeaker, setEditingSpeaker] = useState<string | null>(null);
   const [editName, setEditName] = useState("");
+  const [speakersModalOpen, setSpeakersModalOpen] = useState(false);
   const renameSpeaker = useMutation(api.transcripts.renameSpeaker);
 
   const segments = useMemo(
@@ -52,8 +56,9 @@ export default function TranscriptPanel({
   const activeRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!isPlaying) return;
     activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [activeIndex]);
+  }, [activeIndex, isPlaying]);
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
@@ -61,21 +66,32 @@ export default function TranscriptPanel({
         <h2 className="text-sm font-semibold uppercase text-cream-dim">
           Transcript
         </h2>
-        <button
-          onClick={() =>
-            exportTranscriptMarkdown({
-              title: sourceTitle ?? "Transcript",
-              markdown,
-              speakers,
-              wordTimestamps,
-              durationSeconds,
-            })
-          }
-          className="text-cream-faint hover:text-brand-orange transition-colors"
-          title="Export as Markdown"
-        >
-          <Download className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          {transcriptId && (
+            <button
+              onClick={() => setSpeakersModalOpen(true)}
+              className="text-cream-faint hover:text-brand-orange transition-colors"
+              title="Edit Speakers"
+            >
+              <Users className="h-4 w-4" />
+            </button>
+          )}
+          <button
+            onClick={() =>
+              exportTranscriptMarkdown({
+                title: sourceTitle ?? "Transcript",
+                markdown,
+                speakers,
+                wordTimestamps,
+                durationSeconds,
+              })
+            }
+            className="text-cream-faint hover:text-brand-orange transition-colors"
+            title="Export as Markdown"
+          >
+            <Download className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       <ScrollArea className="flex-1 overflow-hidden">
@@ -129,17 +145,19 @@ export default function TranscriptPanel({
                       className="text-xs font-medium text-cream bg-transparent border-b border-brand-orange outline-none w-24"
                     />
                   ) : (
-                    <span
-                      className="text-xs font-medium text-cream-muted cursor-pointer hover:text-brand-orange transition-colors"
+                    <button
+                      type="button"
+                      className="text-xs font-medium text-cream-muted hover:text-brand-orange hover:underline transition-colors px-1 -mx-1 rounded"
                       onClick={(e) => {
                         e.stopPropagation();
+                        e.preventDefault();
                         setEditingSpeaker(segment.speakerId);
                         setEditName(segment.speakerName);
                       }}
                       title="Click to rename speaker"
                     >
                       {segment.speakerName}
-                    </span>
+                    </button>
                   )}
                   <span className="text-xs text-cream-faint">
                     {formatTimestamp(segment.startTime)}
@@ -153,6 +171,14 @@ export default function TranscriptPanel({
           })}
         </div>
       </ScrollArea>
+
+      <EditSpeakersModal
+        open={speakersModalOpen}
+        onOpenChange={setSpeakersModalOpen}
+        speakers={speakers}
+        segments={segments}
+        transcriptId={transcriptId}
+      />
     </div>
   );
 }
