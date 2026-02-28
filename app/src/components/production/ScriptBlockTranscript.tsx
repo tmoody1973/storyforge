@@ -16,6 +16,7 @@ interface ScriptBlockTranscriptProps {
   isActive: boolean;
   correctMode: boolean;
   currentTime: number;
+  cursorWordTime: number | null;
   onTextChange: (blockId: string, text: string) => void;
   onToggleExclude: (blockId: string) => void;
   onWordExclude: (blockId: string, wordIndex: number) => void;
@@ -26,35 +27,45 @@ interface ScriptBlockTranscriptProps {
   onAcceptSuggestion: (blockId: string) => void;
   onRejectSuggestion: (blockId: string) => void;
   onSeek: (time: number) => void;
+  onCursorChange?: (time: number) => void;
 }
 
 function WordSpan({
   word,
   index,
   isPlaying,
+  isCursor,
   correctMode,
   onExclude,
   onCorrect,
   onSeek,
+  onCursorChange,
 }: {
   word: WordRef;
   index: number;
   isPlaying: boolean;
+  isCursor: boolean;
   correctMode: boolean;
   onExclude: (index: number) => void;
   onCorrect: (index: number, text: string) => void;
   onSeek: (time: number) => void;
+  onCursorChange?: (time: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [editText, setEditText] = useState("");
   const displayText = word.correctedText ?? word.word;
 
-  function handleClick() {
+  function handleClick(e: React.MouseEvent) {
     if (correctMode) {
       setEditText(displayText);
       setEditing(true);
-    } else {
+    } else if (e.altKey) {
+      // Alt+click: toggle word exclusion
       onExclude(index);
+    } else {
+      // Single-click: seek to this word
+      onSeek(word.start);
+      onCursorChange?.(word.start);
     }
   }
 
@@ -104,22 +115,22 @@ function WordSpan({
         : "hover:bg-charcoal-surface/80";
 
   const playingClass = isPlaying && !word.excluded ? "bg-brand-orange/20 text-cream" : "";
+  const cursorClass = isCursor && !word.excluded ? "border-l-2 border-brand-orange" : "";
 
   return (
     <span
-      className={`${baseClasses} ${stateClasses} ${playingClass}`}
+      className={`${baseClasses} ${stateClasses} ${playingClass} ${cursorClass}`}
       onClick={handleClick}
-      onDoubleClick={() => onSeek(word.start)}
       title={
         word.excluded
-          ? "Click to include"
+          ? "Alt+click to include"
           : word.correctedText
             ? `Original: "${word.word}"`
             : word.isFiller
-              ? "Filler word — click to exclude"
+              ? "Filler word — Alt+click to exclude"
               : correctMode
                 ? "Click to correct text"
-                : "Click to exclude"
+                : "Click to seek · Alt+click to exclude"
       }
       data-start={word.start}
       data-end={word.end}
@@ -134,6 +145,7 @@ export default function ScriptBlockTranscript({
   isActive,
   correctMode,
   currentTime,
+  cursorWordTime,
   onTextChange,
   onToggleExclude,
   onWordExclude,
@@ -144,6 +156,7 @@ export default function ScriptBlockTranscript({
   onAcceptSuggestion,
   onRejectSuggestion,
   onSeek,
+  onCursorChange,
 }: ScriptBlockTranscriptProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const editRef = useRef<HTMLDivElement>(null);
@@ -249,10 +262,16 @@ export default function ScriptBlockTranscript({
                 currentTime >= word.start &&
                 currentTime <= word.end
               }
+              isCursor={
+                cursorWordTime !== null &&
+                word.start <= cursorWordTime &&
+                cursorWordTime < word.end
+              }
               correctMode={correctMode}
               onExclude={(idx) => onWordExclude(block.id, idx)}
               onCorrect={(idx, text) => onWordCorrect(block.id, idx, text)}
               onSeek={onSeek}
+              onCursorChange={onCursorChange}
             />
           ))}
         </div>

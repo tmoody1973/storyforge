@@ -21,6 +21,7 @@ interface TranscriptPanelProps {
   currentTime: number;
   isPlaying: boolean;
   onSeek: (time: number) => void;
+  onCursorChange?: (time: number) => void;
   fillerWords?: Array<{
     word: string;
     start: number;
@@ -39,6 +40,7 @@ export default function TranscriptPanel({
   currentTime,
   isPlaying,
   onSeek,
+  onCursorChange,
   sourceTitle,
   durationSeconds,
 }: TranscriptPanelProps) {
@@ -54,9 +56,14 @@ export default function TranscriptPanel({
 
   const activeIndex = findActiveSegment(segments, currentTime);
   const activeRef = useRef<HTMLDivElement>(null);
+  const prevActiveIndex = useRef(activeIndex);
 
   useEffect(() => {
-    if (!isPlaying) return;
+    if (!isPlaying || activeIndex === prevActiveIndex.current) {
+      prevActiveIndex.current = activeIndex;
+      return;
+    }
+    prevActiveIndex.current = activeIndex;
     activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [activeIndex, isPlaying]);
 
@@ -104,11 +111,12 @@ export default function TranscriptPanel({
                 ref={isActive ? activeRef : undefined}
                 role="button"
                 tabIndex={0}
-                onClick={() => onSeek(segment.startTime)}
+                onClick={() => { onSeek(segment.startTime); onCursorChange?.(segment.startTime); }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter" || e.key === " ") {
                     e.preventDefault();
                     onSeek(segment.startTime);
+                    onCursorChange?.(segment.startTime);
                   }
                 }}
                 className={`cursor-pointer rounded-lg px-3 py-2 transition-colors ${

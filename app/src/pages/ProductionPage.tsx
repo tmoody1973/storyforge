@@ -4,6 +4,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { useWavesurfer } from "@/hooks/useWavesurfer";
+import { usePlaybackShortcuts } from "@/hooks/usePlaybackShortcuts";
 import { StoryHeader } from "@/components/production/StoryHeader";
 import { WaveformPanel } from "@/components/production/WaveformPanel";
 import TranscriptPanel from "@/components/production/TranscriptPanel";
@@ -62,6 +63,11 @@ export default function ProductionPage() {
   const [viewMode, setViewMode] = useState<ViewMode>("transcript");
   const [chatPrefill, setChatPrefill] = useState<string | undefined>();
   const [excludedRanges, setExcludedRanges] = useState<TimeRange[]>([]);
+  const [cursorWordTime, setCursorWordTime] = useState<number | null>(null);
+
+  const handleCursorChange = useCallback((time: number) => {
+    setCursorWordTime(time);
+  }, []);
 
   const handleAskCoach = useCallback((message: string) => {
     setChatPrefill(message);
@@ -82,6 +88,34 @@ export default function ProductionPage() {
     placeholderDuration: selectedSource?.durationSeconds ?? story?.audioDurationSeconds ?? 120,
     excludedRanges,
   });
+
+  // ---------------------------------------------------------------------------
+  // Playback keyboard shortcuts
+  // ---------------------------------------------------------------------------
+
+  usePlaybackShortcuts({
+    isPlaying: ws.isPlaying,
+    play: ws.play,
+    pause: ws.pause,
+    seek: ws.seek,
+    cursorWordTime,
+    currentTime: ws.currentTime,
+    duration: ws.duration,
+  });
+
+  // Escape: snap text cursor to playhead
+  useEffect(() => {
+    function handleEscape(e: KeyboardEvent) {
+      const tag = (e.target as HTMLElement).tagName;
+      const editable = (e.target as HTMLElement).isContentEditable;
+      if (tag === "INPUT" || tag === "TEXTAREA" || editable) return;
+      if (e.key === "Escape") {
+        setCursorWordTime(ws.currentTime);
+      }
+    }
+    document.addEventListener("keydown", handleEscape);
+    return () => document.removeEventListener("keydown", handleEscape);
+  }, [ws.currentTime]);
 
   // ---------------------------------------------------------------------------
   // Add regions for key quotes when transcript loads
@@ -233,7 +267,9 @@ export default function ProductionPage() {
                 speakers={speakers}
                 wordTimestamps={wordTimestamps}
                 currentTime={ws.currentTime}
+                isPlaying={ws.isPlaying}
                 onSeek={ws.seek}
+                onCursorChange={handleCursorChange}
                 fillerWords={fillerWords}
                 sourceTitle={selectedSource?.title}
                 durationSeconds={selectedSource?.durationSeconds ?? undefined}
@@ -243,7 +279,10 @@ export default function ProductionPage() {
                 storyId={storyId}
                 script={generatedScript ?? null}
                 currentTime={ws.currentTime}
+                isPlaying={ws.isPlaying}
                 onSeek={ws.seek}
+                onCursorChange={handleCursorChange}
+                cursorWordTime={cursorWordTime}
                 onAskCoach={handleAskCoach}
                 sourceId={selectedSourceId ?? undefined}
                 storyTitle={story.title}

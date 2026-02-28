@@ -22,7 +22,10 @@ interface ScriptEditorProps {
   storyId: Id<"stories">;
   script: ProducerScript | ProducerScriptV1 | null;
   currentTime: number;
+  isPlaying: boolean;
   onSeek: (time: number) => void;
+  onCursorChange?: (time: number) => void;
+  cursorWordTime?: number | null;
   onAskCoach: (message: string) => void;
   sourceId?: Id<"sources">;
   storyTitle: string;
@@ -35,7 +38,10 @@ export default function ScriptEditor({
   storyId,
   script: serverScript,
   currentTime,
+  isPlaying,
   onSeek,
+  onCursorChange,
+  cursorWordTime,
   onAskCoach,
   sourceId,
   storyTitle,
@@ -115,10 +121,17 @@ export default function ScriptEditor({
     }
   }, [blocks, onExcludedRangesChange]);
 
-  // Auto-scroll to active block during playback
+  // Auto-scroll to active block during playback — only when activeIndex changes,
+  // not when isPlaying transitions (avoids jumping when user presses play)
+  const prevActiveIndex = useRef(activeIndex);
   useEffect(() => {
+    if (!isPlaying || activeIndex === prevActiveIndex.current) {
+      prevActiveIndex.current = activeIndex;
+      return;
+    }
+    prevActiveIndex.current = activeIndex;
     activeRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  }, [activeIndex]);
+  }, [activeIndex, isPlaying]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -613,7 +626,7 @@ export default function ScriptEditor({
         correctMode={correctMode}
         canUndo={undoStack.canUndo}
         canRedo={undoStack.canRedo}
-        onInsertVoiceover={() => insertVoiceoverMutation({ storyId })}
+        onInsertVoiceover={() => insertVoiceoverMutation({ storyId, afterBlockId: blocks[activeIndex]?.id })}
         onToggleCorrectMode={() => setCorrectMode((prev) => !prev)}
         onRemoveFillers={handleRemoveFillers}
         onRestoreFillers={handleRestoreFillers}
@@ -658,6 +671,7 @@ export default function ScriptEditor({
                   isActive={isActive}
                   correctMode={correctMode}
                   currentTime={currentTime}
+                  cursorWordTime={cursorWordTime ?? null}
                   onTextChange={handleTextChange}
                   onToggleExclude={handleToggleExclude}
                   onWordExclude={handleWordExclude}
@@ -668,6 +682,7 @@ export default function ScriptEditor({
                   onAcceptSuggestion={handleAcceptSuggestion}
                   onRejectSuggestion={handleRejectSuggestion}
                   onSeek={onSeek}
+                  onCursorChange={onCursorChange}
                 />
               </div>
             );
