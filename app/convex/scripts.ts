@@ -19,6 +19,17 @@ interface WordTimestamp {
   speaker: string;
 }
 
+interface WordRef {
+  word: string;
+  start: number;
+  end: number;
+  confidence: number;
+  speaker: string;
+  excluded: boolean;
+  isFiller: boolean;
+  correctedText?: string;
+}
+
 interface ScriptBlock {
   id: string;
   type: "transcript" | "voiceover";
@@ -30,12 +41,43 @@ interface ScriptBlock {
   sourceId?: string;
   excluded: boolean;
   source: "transcript" | "human" | "ai" | "voiceover";
+  editedText?: string;
+  voCueText?: string;
+  voDraftNarration?: string;
+  aiSuggestion?: string;
+  aiSuggestionAccepted?: boolean;
+  notes?: string;
+  words?: WordRef[];
+  placeholderDuration?: number;
 }
+
+interface ScriptVersion {
+  id: string;
+  name: string;
+  blocks: ScriptBlock[];
+  createdAt: number;
+}
+
+interface ProducerScriptV2 {
+  version: 2;
+  activeVersionId: string;
+  versions: ScriptVersion[];
+  createdAt: number;
+  lastEditedAt: number;
+}
+
+// Common filler words to auto-tag
+const FILLER_WORDS = new Set([
+  "um", "uh", "erm", "ah", "hmm", "like", "you know", "i mean",
+  "sort of", "kind of", "basically", "actually", "literally",
+  "right", "so", "well", "okay",
+]);
 
 function parseTranscriptToBlocks(
   markdown: string,
   speakers: Speaker[],
   wordTimestamps: WordTimestamp[],
+  fillerWords: Array<{ word: string; start: number; end: number; speaker: string }>,
   sourceId?: string,
 ): ScriptBlock[] {
   if (!markdown.trim()) return [];
@@ -66,6 +108,12 @@ function parseTranscriptToBlocks(
   }
   if (currentGroup.length > 0) timestampGroups.push(currentGroup);
 
+  // Build a set of filler word time positions for quick lookup
+  const fillerSet = new Set<string>();
+  for (const fw of fillerWords) {
+    fillerSet.add(`${fw.start.toFixed(3)}-${fw.end.toFixed(3)}`);
+  }
+
   const speakerPattern =
     /^\*\*(.+?)(?::)?\*\*(?:\s*(?:\([^)]*\)\s*)?\n?|\s*)(.*)$/s;
 
@@ -84,6 +132,25 @@ function parseTranscriptToBlocks(
     const startTime = group ? group[0].start : 0;
     const endTime = group ? group[group.length - 1].end : 0;
 
+    // Attach WordRef[] from timestamp group
+    const words: WordRef[] = group
+      ? group.map((wt) => {
+          const key = `${wt.start.toFixed(3)}-${wt.end.toFixed(3)}`;
+          const isFiller =
+            fillerSet.has(key) ||
+            FILLER_WORDS.has(wt.word.toLowerCase().replace(/[.,!?]/g, ""));
+          return {
+            word: wt.word,
+            start: wt.start,
+            end: wt.end,
+            confidence: wt.confidence,
+            speaker: wt.speaker,
+            excluded: false,
+            isFiller,
+          };
+        })
+      : [];
+
     blocks.push({
       id: crypto.randomUUID(),
       type: "transcript",
@@ -95,10 +162,55 @@ function parseTranscriptToBlocks(
       sourceId,
       excluded: false,
       source: "transcript",
+      words,
     });
   }
 
   return blocks;
+}
+
+// Migrate v1 script to v2 format
+function migrateScript(raw: Record<string, unknown>): ProducerScriptV2 {
+  if (raw.version === 2) return raw as unknown as ProducerScriptV2;
+  // v1 → v2
+  const blocks = (raw.blocks ?? []) as ScriptBlock[];
+  const versionId = crypto.randomUUID();
+  return {
+    version: 2,
+    activeVersionId: versionId,
+    versions: [
+      {
+        id: versionId,
+        name: "Original",
+        blocks,
+        createdAt: (raw.createdAt as number) ?? Date.now(),
+      },
+    ],
+    createdAt: (raw.createdAt as number) ?? Date.now(),
+    lastEditedAt: (raw.lastEditedAt as number) ?? Date.now(),
+  };
+}
+
+// Helper: get active blocks from a v2 script
+function getActiveBlocks(script: ProducerScriptV2): ScriptBlock[] {
+  const version = script.versions.find((v) => v.id === script.activeVersionId);
+  return version?.blocks ?? [];
+}
+
+// Helper: update active version's blocks
+function updateActiveBlocks(
+  script: ProducerScriptV2,
+  updater: (blocks: ScriptBlock[]) => ScriptBlock[],
+): ProducerScriptV2 {
+  return {
+    ...script,
+    versions: script.versions.map((v) =>
+      v.id === script.activeVersionId
+        ? { ...v, blocks: updater(v.blocks) }
+        : v,
+    ),
+    lastEditedAt: Date.now(),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +221,9 @@ export const getScript = query({
   args: { storyId: v.id("stories") },
   handler: async (ctx, args) => {
     const story = await ctx.db.get(args.storyId);
-    return story?.generatedScript ?? null;
+    if (!story?.generatedScript) return null;
+    // Auto-migrate v1 → v2 on read
+    return migrateScript(story.generatedScript as Record<string, unknown>);
   },
 });
 
@@ -121,15 +235,23 @@ export const initializeScript = mutation({
   args: {
     storyId: v.id("stories"),
     sourceId: v.optional(v.id("sources")),
+    fillerWords: v.optional(v.array(v.object({
+      word: v.string(),
+      start: v.number(),
+      end: v.number(),
+      speaker: v.string(),
+    }))),
   },
   handler: async (ctx, args) => {
     const story = await ctx.db.get(args.storyId);
     if (!story) throw new Error("Story not found");
 
-    // If script already exists, return it
-    if (story.generatedScript) return story.generatedScript;
+    // If script already exists, return migrated version
+    if (story.generatedScript) {
+      return migrateScript(story.generatedScript as Record<string, unknown>);
+    }
 
-    // Find the transcript — try sourceId first, then by story
+    // Find the transcript
     let transcript = null;
     if (args.sourceId) {
       const source = await ctx.db.get(args.sourceId);
@@ -148,17 +270,34 @@ export const initializeScript = mutation({
 
     const speakers = (transcript.speakers ?? []) as Speaker[];
     const wordTimestamps = (transcript.wordTimestamps ?? []) as WordTimestamp[];
+    const fillerWords = (args.fillerWords ?? (transcript as Record<string, unknown>).fillerWords ?? []) as Array<{
+      word: string;
+      start: number;
+      end: number;
+      speaker: string;
+    }>;
+
     const blocks = parseTranscriptToBlocks(
       transcript.markdown,
       speakers,
       wordTimestamps,
+      fillerWords,
       args.sourceId,
     );
 
     const now = Date.now();
-    const script = {
-      version: 1,
-      blocks,
+    const versionId = crypto.randomUUID();
+    const script: ProducerScriptV2 = {
+      version: 2,
+      activeVersionId: versionId,
+      versions: [
+        {
+          id: versionId,
+          name: "Original",
+          blocks,
+          createdAt: now,
+        },
+      ],
       createdAt: now,
       lastEditedAt: now,
     };
@@ -193,16 +332,16 @@ export const updateBlockText = mutation({
     const story = await ctx.db.get(args.storyId);
     if (!story?.generatedScript) throw new Error("No script found");
 
-    const script = story.generatedScript as { blocks: ScriptBlock[]; version: number; createdAt: number; lastEditedAt: number };
-    const blocks = script.blocks.map((b: ScriptBlock) =>
-      b.id === args.blockId
-        ? { ...b, editedText: args.editedText, source: b.editedText !== b.originalText ? "human" as const : b.source }
-        : b,
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.map((b) =>
+        b.id === args.blockId
+          ? { ...b, editedText: args.editedText, source: b.editedText !== b.originalText ? "human" as const : b.source }
+          : b,
+      ),
     );
 
-    await ctx.db.patch(args.storyId, {
-      generatedScript: { ...script, blocks, lastEditedAt: Date.now() },
-    });
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
   },
 });
 
@@ -215,14 +354,14 @@ export const toggleBlockExclusion = mutation({
     const story = await ctx.db.get(args.storyId);
     if (!story?.generatedScript) throw new Error("No script found");
 
-    const script = story.generatedScript as { blocks: ScriptBlock[]; version: number; createdAt: number; lastEditedAt: number };
-    const blocks = script.blocks.map((b: ScriptBlock) =>
-      b.id === args.blockId ? { ...b, excluded: !b.excluded } : b,
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.map((b) =>
+        b.id === args.blockId ? { ...b, excluded: !b.excluded } : b,
+      ),
     );
 
-    await ctx.db.patch(args.storyId, {
-      generatedScript: { ...script, blocks, lastEditedAt: Date.now() },
-    });
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
   },
 });
 
@@ -236,7 +375,7 @@ export const insertVoiceoverBlock = mutation({
     const story = await ctx.db.get(args.storyId);
     if (!story?.generatedScript) throw new Error("No script found");
 
-    const script = story.generatedScript as { blocks: ScriptBlock[]; version: number; createdAt: number; lastEditedAt: number };
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
     const voBlock: ScriptBlock = {
       id: crypto.randomUUID(),
       type: "voiceover",
@@ -245,18 +384,18 @@ export const insertVoiceoverBlock = mutation({
       voCueText: args.cueText ?? "",
     } as ScriptBlock;
 
-    const blocks = [...script.blocks];
-    if (args.afterBlockId) {
-      const idx = blocks.findIndex((b: ScriptBlock) => b.id === args.afterBlockId);
-      blocks.splice(idx + 1, 0, voBlock);
-    } else {
-      blocks.push(voBlock);
-    }
-
-    await ctx.db.patch(args.storyId, {
-      generatedScript: { ...script, blocks, lastEditedAt: Date.now() },
+    const updated = updateActiveBlocks(script, (blocks) => {
+      const newBlocks = [...blocks];
+      if (args.afterBlockId) {
+        const idx = newBlocks.findIndex((b) => b.id === args.afterBlockId);
+        newBlocks.splice(idx + 1, 0, voBlock);
+      } else {
+        newBlocks.push(voBlock);
+      }
+      return newBlocks;
     });
 
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
     return voBlock.id;
   },
 });
@@ -272,19 +411,19 @@ export const updateVoiceoverBlock = mutation({
     const story = await ctx.db.get(args.storyId);
     if (!story?.generatedScript) throw new Error("No script found");
 
-    const script = story.generatedScript as { blocks: ScriptBlock[]; version: number; createdAt: number; lastEditedAt: number };
-    const blocks = script.blocks.map((b: ScriptBlock) => {
-      if (b.id !== args.blockId) return b;
-      return {
-        ...b,
-        ...(args.cueText !== undefined ? { voCueText: args.cueText } : {}),
-        ...(args.draftNarration !== undefined ? { voDraftNarration: args.draftNarration } : {}),
-      };
-    });
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.map((b) => {
+        if (b.id !== args.blockId) return b;
+        return {
+          ...b,
+          ...(args.cueText !== undefined ? { voCueText: args.cueText } : {}),
+          ...(args.draftNarration !== undefined ? { voDraftNarration: args.draftNarration } : {}),
+        };
+      }),
+    );
 
-    await ctx.db.patch(args.storyId, {
-      generatedScript: { ...script, blocks, lastEditedAt: Date.now() },
-    });
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
   },
 });
 
@@ -297,19 +436,19 @@ export const removeBlock = mutation({
     const story = await ctx.db.get(args.storyId);
     if (!story?.generatedScript) throw new Error("No script found");
 
-    const script = story.generatedScript as { blocks: ScriptBlock[]; version: number; createdAt: number; lastEditedAt: number };
-    const block = script.blocks.find((b: ScriptBlock) => b.id === args.blockId);
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const blocks = getActiveBlocks(script);
+    const block = blocks.find((b) => b.id === args.blockId);
 
-    // Only voiceover blocks can be removed; transcript blocks get excluded
     if (block?.type === "transcript") {
       throw new Error("Use toggleBlockExclusion for transcript blocks");
     }
 
-    const blocks = script.blocks.filter((b: ScriptBlock) => b.id !== args.blockId);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.filter((b) => b.id !== args.blockId),
+    );
 
-    await ctx.db.patch(args.storyId, {
-      generatedScript: { ...script, blocks, lastEditedAt: Date.now() },
-    });
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
   },
 });
 
@@ -323,16 +462,16 @@ export const saveAiSuggestion = mutation({
     const story = await ctx.db.get(args.storyId);
     if (!story?.generatedScript) throw new Error("No script found");
 
-    const script = story.generatedScript as { blocks: ScriptBlock[]; version: number; createdAt: number; lastEditedAt: number };
-    const blocks = script.blocks.map((b: ScriptBlock) =>
-      b.id === args.blockId
-        ? { ...b, aiSuggestion: args.suggestion, aiSuggestionAccepted: undefined }
-        : b,
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.map((b) =>
+        b.id === args.blockId
+          ? { ...b, aiSuggestion: args.suggestion, aiSuggestionAccepted: undefined }
+          : b,
+      ),
     );
 
-    await ctx.db.patch(args.storyId, {
-      generatedScript: { ...script, blocks, lastEditedAt: Date.now() },
-    });
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
   },
 });
 
@@ -346,22 +485,238 @@ export const handleAiSuggestion = mutation({
     const story = await ctx.db.get(args.storyId);
     if (!story?.generatedScript) throw new Error("No script found");
 
-    const script = story.generatedScript as { blocks: ScriptBlock[]; version: number; createdAt: number; lastEditedAt: number };
-    const blocks = script.blocks.map((b: ScriptBlock) => {
-      if (b.id !== args.blockId) return b;
-      if (args.accepted) {
-        return {
-          ...b,
-          editedText: (b as { aiSuggestion?: string }).aiSuggestion ?? b.editedText,
-          source: "ai" as const,
-          aiSuggestionAccepted: true,
-        };
-      }
-      return { ...b, aiSuggestion: undefined, aiSuggestionAccepted: false };
-    });
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.map((b) => {
+        if (b.id !== args.blockId) return b;
+        if (args.accepted) {
+          return {
+            ...b,
+            editedText: b.aiSuggestion ?? b.editedText,
+            source: "ai" as const,
+            aiSuggestionAccepted: true,
+          };
+        }
+        return { ...b, aiSuggestion: undefined, aiSuggestionAccepted: false };
+      }),
+    );
 
-    await ctx.db.patch(args.storyId, {
-      generatedScript: { ...script, blocks, lastEditedAt: Date.now() },
-    });
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Word-level mutations
+// ---------------------------------------------------------------------------
+
+export const toggleWordExclusion = mutation({
+  args: {
+    storyId: v.id("stories"),
+    blockId: v.string(),
+    wordIndex: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const story = await ctx.db.get(args.storyId);
+    if (!story?.generatedScript) throw new Error("No script found");
+
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.map((b) => {
+        if (b.id !== args.blockId || !b.words) return b;
+        const words = b.words.map((w, i) =>
+          i === args.wordIndex ? { ...w, excluded: !w.excluded } : w,
+        );
+        return { ...b, words };
+      }),
+    );
+
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
+  },
+});
+
+export const removeAllFillers = mutation({
+  args: {
+    storyId: v.id("stories"),
+  },
+  handler: async (ctx, args) => {
+    const story = await ctx.db.get(args.storyId);
+    if (!story?.generatedScript) throw new Error("No script found");
+
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.map((b) => {
+        if (!b.words) return b;
+        const words = b.words.map((w) =>
+          w.isFiller ? { ...w, excluded: true } : w,
+        );
+        return { ...b, words };
+      }),
+    );
+
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
+  },
+});
+
+export const restoreAllFillers = mutation({
+  args: {
+    storyId: v.id("stories"),
+  },
+  handler: async (ctx, args) => {
+    const story = await ctx.db.get(args.storyId);
+    if (!story?.generatedScript) throw new Error("No script found");
+
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.map((b) => {
+        if (!b.words) return b;
+        const words = b.words.map((w) =>
+          w.isFiller ? { ...w, excluded: false } : w,
+        );
+        return { ...b, words };
+      }),
+    );
+
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
+  },
+});
+
+export const correctWord = mutation({
+  args: {
+    storyId: v.id("stories"),
+    blockId: v.string(),
+    wordIndex: v.number(),
+    correctedText: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const story = await ctx.db.get(args.storyId);
+    if (!story?.generatedScript) throw new Error("No script found");
+
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.map((b) => {
+        if (b.id !== args.blockId || !b.words) return b;
+        const words = b.words.map((w, i) =>
+          i === args.wordIndex
+            ? { ...w, correctedText: args.correctedText || undefined }
+            : w,
+        );
+        return { ...b, words };
+      }),
+    );
+
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
+  },
+});
+
+// ---------------------------------------------------------------------------
+// Versioning mutations
+// ---------------------------------------------------------------------------
+
+export const createVersion = mutation({
+  args: {
+    storyId: v.id("stories"),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const story = await ctx.db.get(args.storyId);
+    if (!story?.generatedScript) throw new Error("No script found");
+
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const activeBlocks = getActiveBlocks(script);
+
+    const newVersionId = crypto.randomUUID();
+    const newVersion: ScriptVersion = {
+      id: newVersionId,
+      name: args.name,
+      blocks: JSON.parse(JSON.stringify(activeBlocks)), // deep clone
+      createdAt: Date.now(),
+    };
+
+    const updated: ProducerScriptV2 = {
+      ...script,
+      activeVersionId: newVersionId,
+      versions: [...script.versions, newVersion],
+      lastEditedAt: Date.now(),
+    };
+
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
+    return newVersionId;
+  },
+});
+
+export const switchVersion = mutation({
+  args: {
+    storyId: v.id("stories"),
+    versionId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const story = await ctx.db.get(args.storyId);
+    if (!story?.generatedScript) throw new Error("No script found");
+
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const exists = script.versions.some((v) => v.id === args.versionId);
+    if (!exists) throw new Error("Version not found");
+
+    const updated: ProducerScriptV2 = {
+      ...script,
+      activeVersionId: args.versionId,
+      lastEditedAt: Date.now(),
+    };
+
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
+  },
+});
+
+export const renameVersion = mutation({
+  args: {
+    storyId: v.id("stories"),
+    versionId: v.string(),
+    name: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const story = await ctx.db.get(args.storyId);
+    if (!story?.generatedScript) throw new Error("No script found");
+
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated: ProducerScriptV2 = {
+      ...script,
+      versions: script.versions.map((v) =>
+        v.id === args.versionId ? { ...v, name: args.name } : v,
+      ),
+      lastEditedAt: Date.now(),
+    };
+
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
+  },
+});
+
+export const deleteVersion = mutation({
+  args: {
+    storyId: v.id("stories"),
+    versionId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const story = await ctx.db.get(args.storyId);
+    if (!story?.generatedScript) throw new Error("No script found");
+
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    if (script.versions.length <= 1) {
+      throw new Error("Cannot delete the last version");
+    }
+
+    const newVersions = script.versions.filter((v) => v.id !== args.versionId);
+    const newActiveId =
+      script.activeVersionId === args.versionId
+        ? newVersions[0].id
+        : script.activeVersionId;
+
+    const updated: ProducerScriptV2 = {
+      ...script,
+      activeVersionId: newActiveId,
+      versions: newVersions,
+      lastEditedAt: Date.now(),
+    };
+
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
   },
 });

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { MoreHorizontal, Undo2, MessageSquare, Mic, EyeOff, Eye, Check, X } from "lucide-react";
-import type { ScriptBlock } from "@/lib/scriptTypes";
+import type { ScriptBlock, WordRef } from "@/lib/scriptTypes";
 import { getEffectiveSource } from "@/lib/scriptHelpers";
 import { formatTimestamp } from "@/lib/transcript";
 
@@ -14,8 +14,12 @@ const BORDER_COLORS: Record<string, string> = {
 interface ScriptBlockTranscriptProps {
   block: ScriptBlock;
   isActive: boolean;
+  correctMode: boolean;
+  currentTime: number;
   onTextChange: (blockId: string, text: string) => void;
   onToggleExclude: (blockId: string) => void;
+  onWordExclude: (blockId: string, wordIndex: number) => void;
+  onWordCorrect: (blockId: string, wordIndex: number, correctedText: string) => void;
   onInsertVoiceover: (afterBlockId: string) => void;
   onAskCoach: (blockId: string, text: string) => void;
   onRevert: (blockId: string) => void;
@@ -24,11 +28,116 @@ interface ScriptBlockTranscriptProps {
   onSeek: (time: number) => void;
 }
 
+function WordSpan({
+  word,
+  index,
+  isPlaying,
+  correctMode,
+  onExclude,
+  onCorrect,
+  onSeek,
+}: {
+  word: WordRef;
+  index: number;
+  isPlaying: boolean;
+  correctMode: boolean;
+  onExclude: (index: number) => void;
+  onCorrect: (index: number, text: string) => void;
+  onSeek: (time: number) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState("");
+  const displayText = word.correctedText ?? word.word;
+
+  function handleClick() {
+    if (correctMode) {
+      setEditText(displayText);
+      setEditing(true);
+    } else {
+      onExclude(index);
+    }
+  }
+
+  function handleCorrectSubmit() {
+    const trimmed = editText.trim();
+    if (trimmed && trimmed !== word.word) {
+      onCorrect(index, trimmed);
+    } else if (trimmed === word.word) {
+      // Revert correction
+      onCorrect(index, "");
+    }
+    setEditing(false);
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent) {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleCorrectSubmit();
+    } else if (e.key === "Escape") {
+      setEditing(false);
+    }
+  }
+
+  if (editing) {
+    return (
+      <input
+        type="text"
+        value={editText}
+        onChange={(e) => setEditText(e.target.value)}
+        onBlur={handleCorrectSubmit}
+        onKeyDown={handleKeyDown}
+        autoFocus
+        className="inline-block bg-charcoal-surface border border-green-400/50 rounded px-1 text-sm text-cream outline-none w-auto"
+        style={{ width: `${Math.max(editText.length, 2)}ch` }}
+      />
+    );
+  }
+
+  const baseClasses = "cursor-pointer rounded-sm px-0.5 transition-all text-sm leading-relaxed";
+
+  const stateClasses = word.excluded
+    ? "line-through opacity-40 hover:opacity-60"
+    : word.isFiller
+      ? "bg-orange-500/20 hover:bg-orange-500/30"
+      : word.correctedText
+        ? "underline decoration-green-400 decoration-1 underline-offset-2 hover:bg-green-400/10"
+        : "hover:bg-charcoal-surface/80";
+
+  const playingClass = isPlaying && !word.excluded ? "bg-brand-orange/20 text-cream" : "";
+
+  return (
+    <span
+      className={`${baseClasses} ${stateClasses} ${playingClass}`}
+      onClick={handleClick}
+      onDoubleClick={() => onSeek(word.start)}
+      title={
+        word.excluded
+          ? "Click to include"
+          : word.correctedText
+            ? `Original: "${word.word}"`
+            : word.isFiller
+              ? "Filler word — click to exclude"
+              : correctMode
+                ? "Click to correct text"
+                : "Click to exclude"
+      }
+      data-start={word.start}
+      data-end={word.end}
+    >
+      {displayText}
+    </span>
+  );
+}
+
 export default function ScriptBlockTranscript({
   block,
   isActive,
+  correctMode,
+  currentTime,
   onTextChange,
   onToggleExclude,
+  onWordExclude,
+  onWordCorrect,
   onInsertVoiceover,
   onAskCoach,
   onRevert,
@@ -48,6 +157,8 @@ export default function ScriptBlockTranscript({
       onTextChange(block.id, text);
     }
   }
+
+  const hasWords = block.words && block.words.length > 0;
 
   return (
     <div
@@ -125,18 +236,39 @@ export default function ScriptBlockTranscript({
         </div>
       </div>
 
-      {/* Editable text */}
-      <div
-        ref={editRef}
-        contentEditable={!block.excluded}
-        suppressContentEditableWarning
-        onBlur={handleBlur}
-        className={`text-sm leading-relaxed text-cream-muted outline-none rounded px-1 -mx-1 ${
-          block.excluded ? "line-through cursor-default" : "focus:bg-charcoal-surface/50"
-        }`}
-      >
-        {displayText}
-      </div>
+      {/* Word-level rendering (v2) or contentEditable fallback (v1) */}
+      {hasWords ? (
+        <div className="text-sm leading-relaxed text-cream-muted flex flex-wrap gap-x-1 gap-y-0.5">
+          {block.words!.map((word, i) => (
+            <WordSpan
+              key={`${block.id}-${i}`}
+              word={word}
+              index={i}
+              isPlaying={
+                !word.excluded &&
+                currentTime >= word.start &&
+                currentTime <= word.end
+              }
+              correctMode={correctMode}
+              onExclude={(idx) => onWordExclude(block.id, idx)}
+              onCorrect={(idx, text) => onWordCorrect(block.id, idx, text)}
+              onSeek={onSeek}
+            />
+          ))}
+        </div>
+      ) : (
+        <div
+          ref={editRef}
+          contentEditable={!block.excluded}
+          suppressContentEditableWarning
+          onBlur={handleBlur}
+          className={`text-sm leading-relaxed text-cream-muted outline-none rounded px-1 -mx-1 ${
+            block.excluded ? "line-through cursor-default" : "focus:bg-charcoal-surface/50"
+          }`}
+        >
+          {displayText}
+        </div>
+      )}
 
       {/* AI suggestion inline */}
       {block.aiSuggestion && block.aiSuggestionAccepted == null && (

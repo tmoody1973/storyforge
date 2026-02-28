@@ -12,6 +12,7 @@ import SourcePanel from "@/components/production/SourcePanel";
 import ScriptEditor from "@/components/production/ScriptEditor";
 import type { Speaker, WordTimestamp } from "@/lib/transcript";
 import type { ProducerScript } from "@/lib/scriptTypes";
+import type { TimeRange } from "@/lib/scriptHelpers";
 
 type ViewMode = "transcript" | "script";
 
@@ -58,9 +59,14 @@ export default function ProductionPage() {
 
   const [viewMode, setViewMode] = useState<ViewMode>("transcript");
   const [chatPrefill, setChatPrefill] = useState<string | undefined>();
+  const [excludedRanges, setExcludedRanges] = useState<TimeRange[]>([]);
 
   const handleAskCoach = useCallback((message: string) => {
     setChatPrefill(message);
+  }, []);
+
+  const handleExcludedRangesChange = useCallback((ranges: TimeRange[]) => {
+    setExcludedRanges(ranges);
   }, []);
 
   // ---------------------------------------------------------------------------
@@ -72,6 +78,7 @@ export default function ProductionPage() {
     container: waveformRef,
     url: selectedSource?.audioUrl,
     placeholderDuration: selectedSource?.durationSeconds ?? story?.audioDurationSeconds ?? 120,
+    excludedRanges,
   });
 
   // ---------------------------------------------------------------------------
@@ -240,6 +247,9 @@ export default function ProductionPage() {
                 onAskCoach={handleAskCoach}
                 sourceId={selectedSourceId ?? undefined}
                 storyTitle={story.title}
+                wordTimestamps={wordTimestamps}
+                fillerWords={fillerWords}
+                onExcludedRangesChange={handleExcludedRangesChange}
               />
             )}
           </div>

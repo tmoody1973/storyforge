@@ -84,7 +84,7 @@ export default function TranscriptPanel({
             const isActive = i === activeIndex;
             return (
               <div
-                key={`${segment.speakerId}-${segment.startTime}`}
+                key={`${segment.speakerId}-${i}`}
                 ref={isActive ? activeRef : undefined}
                 role="button"
                 tabIndex={0}

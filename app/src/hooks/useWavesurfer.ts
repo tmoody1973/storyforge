@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import type { RefObject } from "react";
 import WaveSurfer from "wavesurfer.js";
 import RegionsPlugin from "wavesurfer.js/dist/plugins/regions.js";
+import type { TimeRange } from "@/lib/scriptHelpers";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -31,6 +32,7 @@ export interface UseWavesurferOptions {
   container: RefObject<HTMLDivElement | null>;
   url?: string;
   placeholderDuration?: number;
+  excludedRanges?: TimeRange[];
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +154,7 @@ function generatePlaceholderAudio(durationSeconds: number): Blob {
 export function useWavesurfer(
   options: UseWavesurferOptions
 ): WavesurferControls {
-  const { container, url, placeholderDuration = 120 } = options;
+  const { container, url, placeholderDuration = 120, excludedRanges } = options;
 
   const [isReady, setIsReady] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -161,6 +163,12 @@ export function useWavesurfer(
 
   const wsRef = useRef<WaveSurfer | null>(null);
   const regionsRef = useRef<RegionsPlugin | null>(null);
+  const excludedRef = useRef<TimeRange[]>([]);
+
+  // Keep excluded ranges ref up to date without recreating WaveSurfer
+  useEffect(() => {
+    excludedRef.current = excludedRanges ?? [];
+  }, [excludedRanges]);
 
   // ------- Create / Destroy wavesurfer instance ----------------------------
   useEffect(() => {
@@ -193,6 +201,15 @@ export function useWavesurfer(
 
     ws.on("audioprocess", (time: number) => {
       setCurrentTime(time);
+
+      // Skip excluded ranges during playback
+      const ranges = excludedRef.current;
+      for (const range of ranges) {
+        if (time >= range.start && time < range.end) {
+          ws.setTime(range.end);
+          return;
+        }
+      }
     });
 
     ws.on("seeking", (time: number) => {
@@ -232,9 +249,33 @@ export function useWavesurfer(
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [url, placeholderDuration]);
-  // NOTE: `container` is a RefObject whose identity is stable, so it does
-  // not need to be in the dependency array. The effect reads `.current` at
-  // invocation time which is sufficient.
+
+  // ------- Render excluded regions on waveform -----------------------------
+  useEffect(() => {
+    const regionsPlugin = regionsRef.current;
+    if (!regionsPlugin || !isReady) return;
+
+    // Remove old excluded regions (keep quote regions)
+    const existingRegions = regionsPlugin.getRegions();
+    for (const r of existingRegions) {
+      if (r.id.startsWith("excluded-")) {
+        r.remove();
+      }
+    }
+
+    // Add new excluded regions
+    const ranges = excludedRanges ?? [];
+    for (let i = 0; i < ranges.length; i++) {
+      regionsPlugin.addRegion({
+        id: `excluded-${i}`,
+        start: ranges[i].start,
+        end: ranges[i].end,
+        color: "rgba(239, 68, 68, 0.15)",
+        drag: false,
+        resize: false,
+      });
+    }
+  }, [excludedRanges, isReady]);
 
   // ------- Transport controls ----------------------------------------------
 
