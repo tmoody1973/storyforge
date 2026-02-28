@@ -1,11 +1,16 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useMemo } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import type { Id } from "../../../convex/_generated/dataModel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ProducerScript, ProducerScriptV1, ScriptBlock, EditOperation } from "@/lib/scriptTypes";
 import { migrateV1toV2, getActiveBlocks } from "@/lib/scriptTypes";
-import { findActiveBlock, computeExcludedRanges } from "@/lib/scriptHelpers";
+import {
+  findActiveBlock,
+  computeExcludedRanges,
+  hydrateScript,
+  getFillerIndicesPerBlock,
+} from "@/lib/scriptHelpers";
 import type { TimeRange } from "@/lib/scriptHelpers";
 import type { WordTimestamp } from "@/lib/transcript";
 import { useUndoStack } from "@/hooks/useUndoStack";
@@ -46,6 +51,7 @@ export default function ScriptEditor({
   const undoStack = useUndoStack(50);
 
   const initializeScript = useMutation(api.scripts.initializeScript);
+  const reinitializeScript = useMutation(api.scripts.reinitializeScript);
   const saveScriptMutation = useMutation(api.scripts.saveScript);
   const updateBlockTextMutation = useMutation(api.scripts.updateBlockText);
   const toggleBlockExclusionMutation = useMutation(api.scripts.toggleBlockExclusion);
@@ -71,26 +77,34 @@ export default function ScriptEditor({
   }, [serverScript]);
 
   // Initialize script on mount if it doesn't exist
+  // Or reinitialize if existing script has broken timestamps (pre-v2 blocks built from markdown)
+  const reinitializedRef = useRef(false);
   useEffect(() => {
     if (serverScript === null) {
-      initializeScript({
-        storyId,
-        sourceId,
-        fillerWords: fillerWords?.map((fw) => ({
-          word: fw.word,
-          start: fw.start,
-          end: fw.end,
-          speaker: fw.speaker,
-        })),
-      }).catch(() => {
+      initializeScript({ storyId, sourceId }).catch(() => {
         // Script initialization failed — likely no transcript
       });
+    } else if (!reinitializedRef.current) {
+      const migrated = migrateV1toV2(serverScript as ProducerScriptV1 | ProducerScript);
+      const blocks = getActiveBlocks(migrated);
+      const transcriptBlocks = blocks.filter((b) => b.type === "transcript");
+      const hasValidTimestamps = transcriptBlocks.some(
+        (b) => b.startTime != null && b.startTime > 0,
+      );
+      if (transcriptBlocks.length > 0 && !hasValidTimestamps) {
+        reinitializedRef.current = true;
+        reinitializeScript({ storyId, sourceId }).catch(() => {});
+      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [serverScript]);
 
-  // Get active blocks from the current version
-  const blocks = localScript ? getActiveBlocks(localScript) : [];
+  // Get active blocks from the current version, hydrated with word data
+  const blocks = useMemo(() => {
+    if (!localScript) return [];
+    const raw = getActiveBlocks(localScript);
+    return hydrateScript(raw, wordTimestamps ?? [], fillerWords);
+  }, [localScript, wordTimestamps, fillerWords]);
   const activeIndex = findActiveBlock(blocks, currentTime);
 
   // Compute and propagate excluded ranges
@@ -194,13 +208,20 @@ export default function ScriptEditor({
       before: word?.excluded ?? false,
     });
 
+    // Update compact excludedWords format (words are hydrated from this)
     updateLocalBlocks((bs) =>
       bs.map((b) => {
-        if (b.id !== blockId || !b.words) return b;
-        const words = b.words.map((w, i) =>
-          i === wordIndex ? { ...w, excluded: !w.excluded } : w,
-        );
-        return { ...b, words };
+        if (b.id !== blockId) return b;
+        const excluded = new Set(b.excludedWords ?? []);
+        if (excluded.has(wordIndex)) {
+          excluded.delete(wordIndex);
+        } else {
+          excluded.add(wordIndex);
+        }
+        return {
+          ...b,
+          excludedWords: excluded.size > 0 ? [...excluded].sort((a, c) => a - c) : undefined,
+        };
       }),
     );
     toggleWordExclusionMutation({ storyId, blockId, wordIndex });
@@ -217,13 +238,20 @@ export default function ScriptEditor({
       after: correctedText,
     });
 
+    // Update compact wordCorrections format (words are hydrated from this)
     updateLocalBlocks((bs) =>
       bs.map((b) => {
-        if (b.id !== blockId || !b.words) return b;
-        const words = b.words.map((w, i) =>
-          i === wordIndex ? { ...w, correctedText: correctedText || undefined } : w,
-        );
-        return { ...b, words };
+        if (b.id !== blockId) return b;
+        const corrections = { ...(b.wordCorrections ?? {}) };
+        if (correctedText) {
+          corrections[String(wordIndex)] = correctedText;
+        } else {
+          delete corrections[String(wordIndex)];
+        }
+        return {
+          ...b,
+          wordCorrections: Object.keys(corrections).length > 0 ? corrections : undefined,
+        };
       }),
     );
     correctWordMutation({ storyId, blockId, wordIndex, correctedText });
@@ -295,6 +323,7 @@ export default function ScriptEditor({
   // ---------------------------------------------------------------------------
 
   function handleRemoveFillers() {
+    // Collect undo changes from hydrated blocks
     const changes: Array<{ blockId: string; wordIndex: number }> = [];
     for (const block of blocks) {
       if (block.words) {
@@ -307,25 +336,38 @@ export default function ScriptEditor({
     }
     undoStack.push({ type: "fillerRemoveAll", changes });
 
+    // Compute filler indices from hydrated blocks for mutation
+    const fillerIndices = getFillerIndicesPerBlock(blocks);
+
+    // Update compact excludedWords format
     updateLocalBlocks((bs) =>
       bs.map((b) => {
-        if (!b.words) return b;
-        const words = b.words.map((w) => (w.isFiller ? { ...w, excluded: true } : w));
-        return { ...b, words };
+        const entry = fillerIndices.find((f) => f.blockId === b.id);
+        if (!entry) return b;
+        const excluded = new Set(b.excludedWords ?? []);
+        for (const idx of entry.indices) excluded.add(idx);
+        return { ...b, excludedWords: [...excluded].sort((a, c) => a - c) };
       }),
     );
-    removeAllFillersMutation({ storyId });
+    removeAllFillersMutation({ storyId, fillerIndices });
   }
 
   function handleRestoreFillers() {
+    const fillerIndices = getFillerIndicesPerBlock(blocks);
+
     updateLocalBlocks((bs) =>
       bs.map((b) => {
-        if (!b.words) return b;
-        const words = b.words.map((w) => (w.isFiller ? { ...w, excluded: false } : w));
-        return { ...b, words };
+        const entry = fillerIndices.find((f) => f.blockId === b.id);
+        if (!entry) return b;
+        const excluded = new Set(b.excludedWords ?? []);
+        for (const idx of entry.indices) excluded.delete(idx);
+        return {
+          ...b,
+          excludedWords: excluded.size > 0 ? [...excluded].sort((a, c) => a - c) : undefined,
+        };
       }),
     );
-    restoreAllFillersMutation({ storyId });
+    restoreAllFillersMutation({ storyId, fillerIndices });
   }
 
   // ---------------------------------------------------------------------------
@@ -365,11 +407,17 @@ export default function ScriptEditor({
       case "wordExclude":
         updateLocalBlocks((bs) =>
           bs.map((b) => {
-            if (b.id !== op.blockId || !b.words) return b;
-            const words = b.words.map((w, i) =>
-              i === op.wordIndex ? { ...w, excluded: op.before } : w,
-            );
-            return { ...b, words };
+            if (b.id !== op.blockId) return b;
+            const excluded = new Set(b.excludedWords ?? []);
+            if (op.before) {
+              excluded.add(op.wordIndex);
+            } else {
+              excluded.delete(op.wordIndex);
+            }
+            return {
+              ...b,
+              excludedWords: excluded.size > 0 ? [...excluded].sort((a, c) => a - c) : undefined,
+            };
           }),
         );
         toggleWordExclusionMutation({ storyId, blockId: op.blockId, wordIndex: op.wordIndex });
@@ -377,11 +425,17 @@ export default function ScriptEditor({
       case "correctWord":
         updateLocalBlocks((bs) =>
           bs.map((b) => {
-            if (b.id !== op.blockId || !b.words) return b;
-            const words = b.words.map((w, i) =>
-              i === op.wordIndex ? { ...w, correctedText: op.before } : w,
-            );
-            return { ...b, words };
+            if (b.id !== op.blockId) return b;
+            const corrections = { ...(b.wordCorrections ?? {}) };
+            if (op.before) {
+              corrections[String(op.wordIndex)] = op.before;
+            } else {
+              delete corrections[String(op.wordIndex)];
+            }
+            return {
+              ...b,
+              wordCorrections: Object.keys(corrections).length > 0 ? corrections : undefined,
+            };
           }),
         );
         correctWordMutation({
@@ -391,22 +445,33 @@ export default function ScriptEditor({
           correctedText: op.before ?? "",
         });
         break;
-      case "fillerRemoveAll":
-        // Restore all the fillers that were excluded
+      case "fillerRemoveAll": {
+        // Restore all the fillers that were excluded — group by block
+        const byBlock = new Map<string, number[]>();
+        for (const c of op.changes) {
+          const arr = byBlock.get(c.blockId) ?? [];
+          arr.push(c.wordIndex);
+          byBlock.set(c.blockId, arr);
+        }
+        const restoreIndices = [...byBlock.entries()].map(([blockId, indices]) => ({
+          blockId,
+          indices,
+        }));
         updateLocalBlocks((bs) =>
           bs.map((b) => {
-            if (!b.words) return b;
-            const words = b.words.map((w, i) => {
-              const change = op.changes.find(
-                (c) => c.blockId === b.id && c.wordIndex === i,
-              );
-              return change ? { ...w, excluded: false } : w;
-            });
-            return { ...b, words };
+            const entry = restoreIndices.find((r) => r.blockId === b.id);
+            if (!entry) return b;
+            const excluded = new Set(b.excludedWords ?? []);
+            for (const idx of entry.indices) excluded.delete(idx);
+            return {
+              ...b,
+              excludedWords: excluded.size > 0 ? [...excluded].sort((a, c) => a - c) : undefined,
+            };
           }),
         );
-        restoreAllFillersMutation({ storyId });
+        restoreAllFillersMutation({ storyId, fillerIndices: restoreIndices });
         break;
+      }
       case "removeBlock":
         // Re-insert the block at its original position
         updateLocalBlocks((bs) => {
@@ -448,11 +513,17 @@ export default function ScriptEditor({
       case "wordExclude":
         updateLocalBlocks((bs) =>
           bs.map((b) => {
-            if (b.id !== op.blockId || !b.words) return b;
-            const words = b.words.map((w, i) =>
-              i === op.wordIndex ? { ...w, excluded: !op.before } : w,
-            );
-            return { ...b, words };
+            if (b.id !== op.blockId) return b;
+            const excluded = new Set(b.excludedWords ?? []);
+            if (!op.before) {
+              excluded.add(op.wordIndex);
+            } else {
+              excluded.delete(op.wordIndex);
+            }
+            return {
+              ...b,
+              excludedWords: excluded.size > 0 ? [...excluded].sort((a, c) => a - c) : undefined,
+            };
           }),
         );
         toggleWordExclusionMutation({ storyId, blockId: op.blockId, wordIndex: op.wordIndex });
@@ -460,11 +531,17 @@ export default function ScriptEditor({
       case "correctWord":
         updateLocalBlocks((bs) =>
           bs.map((b) => {
-            if (b.id !== op.blockId || !b.words) return b;
-            const words = b.words.map((w, i) =>
-              i === op.wordIndex ? { ...w, correctedText: op.after || undefined } : w,
-            );
-            return { ...b, words };
+            if (b.id !== op.blockId) return b;
+            const corrections = { ...(b.wordCorrections ?? {}) };
+            if (op.after) {
+              corrections[String(op.wordIndex)] = op.after;
+            } else {
+              delete corrections[String(op.wordIndex)];
+            }
+            return {
+              ...b,
+              wordCorrections: Object.keys(corrections).length > 0 ? corrections : undefined,
+            };
           }),
         );
         correctWordMutation({
@@ -474,16 +551,20 @@ export default function ScriptEditor({
           correctedText: op.after,
         });
         break;
-      case "fillerRemoveAll":
+      case "fillerRemoveAll": {
+        const fillerIndices = getFillerIndicesPerBlock(blocks);
         updateLocalBlocks((bs) =>
           bs.map((b) => {
-            if (!b.words) return b;
-            const words = b.words.map((w) => (w.isFiller ? { ...w, excluded: true } : w));
-            return { ...b, words };
+            const entry = fillerIndices.find((f) => f.blockId === b.id);
+            if (!entry) return b;
+            const excluded = new Set(b.excludedWords ?? []);
+            for (const idx of entry.indices) excluded.add(idx);
+            return { ...b, excludedWords: [...excluded].sort((a, c) => a - c) };
           }),
         );
-        removeAllFillersMutation({ storyId });
+        removeAllFillersMutation({ storyId, fillerIndices });
         break;
+      }
       default:
         break;
     }

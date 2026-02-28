@@ -36,6 +36,8 @@ export default function ProductionPage() {
     selectedSourceId ? { id: selectedSourceId } : "skip",
   );
   const createSource = useMutation(api.sources.create);
+  // Use getScript query which auto-migrates v1→v2
+  const generatedScript = useQuery(api.scripts.getScript, { storyId }) as ProducerScript | null | undefined;
 
   // Auto-select first source
   useEffect(() => {
@@ -161,8 +163,6 @@ export default function ProductionPage() {
     end: number;
     speaker: string;
   }>;
-
-  const generatedScript = story.generatedScript as ProducerScript | null | undefined;
 
   // ---------------------------------------------------------------------------
   // Render

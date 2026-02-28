@@ -4,16 +4,16 @@
 
 export type BlockSource = "transcript" | "human" | "ai" | "voiceover";
 
-// Word-level data from Deepgram, embedded in each transcript block
+// Word-level data for rendering (hydrated client-side, NOT stored in Convex)
 export interface WordRef {
-  word: string;           // original transcribed text
-  start: number;          // seconds (from Deepgram)
+  word: string;
+  start: number;
   end: number;
   confidence: number;
   speaker: string;
-  excluded: boolean;      // word-level audio exclusion
-  isFiller: boolean;      // tagged during initialization
-  correctedText?: string; // display text override — audio unchanged
+  excluded: boolean;
+  isFiller: boolean;
+  correctedText?: string;
 }
 
 export interface ScriptBlock {
@@ -33,8 +33,12 @@ export interface ScriptBlock {
   aiSuggestion?: string;
   aiSuggestionAccepted?: boolean;
   notes?: string;
-  words?: WordRef[];           // word-level data for this block
-  placeholderDuration?: number; // VO blocks: estimated narration seconds (~150 wpm)
+  placeholderDuration?: number;
+  // Compact word edit state stored in Convex
+  excludedWords?: number[];
+  wordCorrections?: Record<string, string>;
+  // Hydrated at render time (NOT stored in Convex)
+  words?: WordRef[];
 }
 
 export interface ScriptVersion {
@@ -44,7 +48,6 @@ export interface ScriptVersion {
   createdAt: number;
 }
 
-// v2: versions array with active version pointer
 export interface ProducerScript {
   version: 2;
   activeVersionId: string;
@@ -71,7 +74,7 @@ export type EditOperation =
   | { type: "fillerRemoveAll"; changes: Array<{ blockId: string; wordIndex: number }> }
   | { type: "correctWord"; blockId: string; wordIndex: number; before?: string; after: string };
 
-// Helper to get blocks from either v1 or v2 script
+// Helper to get blocks from v2 script
 export function getActiveBlocks(script: ProducerScript): ScriptBlock[] {
   const version = script.versions.find((v) => v.id === script.activeVersionId);
   return version?.blocks ?? [];

@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 
 // ---------------------------------------------------------------------------
-// Helpers (server-side transcript parsing for script initialization)
+// Types (server-side)
 // ---------------------------------------------------------------------------
 
 interface Speaker {
@@ -19,17 +19,7 @@ interface WordTimestamp {
   speaker: string;
 }
 
-interface WordRef {
-  word: string;
-  start: number;
-  end: number;
-  confidence: number;
-  speaker: string;
-  excluded: boolean;
-  isFiller: boolean;
-  correctedText?: string;
-}
-
+// ScriptBlock stored in Convex — NO word data, just edit state
 interface ScriptBlock {
   id: string;
   type: "transcript" | "voiceover";
@@ -47,8 +37,10 @@ interface ScriptBlock {
   aiSuggestion?: string;
   aiSuggestionAccepted?: boolean;
   notes?: string;
-  words?: WordRef[];
   placeholderDuration?: number;
+  // Compact word edit state (indices refer to words in this block's time range)
+  excludedWords?: number[];
+  wordCorrections?: Record<string, string>; // index → corrected text
 }
 
 interface ScriptVersion {
@@ -66,114 +58,114 @@ interface ProducerScriptV2 {
   lastEditedAt: number;
 }
 
-// Common filler words to auto-tag
-const FILLER_WORDS = new Set([
-  "um", "uh", "erm", "ah", "hmm", "like", "you know", "i mean",
-  "sort of", "kind of", "basically", "actually", "literally",
-  "right", "so", "well", "okay",
-]);
+// ---------------------------------------------------------------------------
+// Build blocks directly from word timestamps (not markdown)
+// ---------------------------------------------------------------------------
 
-function parseTranscriptToBlocks(
-  markdown: string,
-  speakers: Speaker[],
+function buildBlocksFromWordTimestamps(
   wordTimestamps: WordTimestamp[],
-  fillerWords: Array<{ word: string; start: number; end: number; speaker: string }>,
+  speakers: Speaker[],
   sourceId?: string,
 ): ScriptBlock[] {
-  if (!markdown.trim()) return [];
+  if (wordTimestamps.length === 0) return [];
 
-  const speakerByName = new Map<string, Speaker>();
+  const speakerById = new Map<string, Speaker>();
   for (const s of speakers) {
-    speakerByName.set(s.name, s);
+    // Map both formats: "speaker_0" and the speaker's actual id
+    speakerById.set(s.id, s);
+    speakerById.set(s.name, s);
   }
 
-  const paragraphs = markdown
-    .split(/\n\n+/)
-    .map((p) => p.trim())
-    .filter(Boolean);
+  // Group consecutive words by speaker into blocks
+  const blocks: ScriptBlock[] = [];
+  let groupWords: WordTimestamp[] = [wordTimestamps[0]];
+  let groupSpeaker = wordTimestamps[0].speaker;
 
-  // Group word timestamps by speaker runs
-  const timestampGroups: WordTimestamp[][] = [];
-  let currentGroup: WordTimestamp[] = [];
-  let currentSpeaker: string | null = null;
-
-  for (const wt of wordTimestamps) {
-    if (wt.speaker !== currentSpeaker) {
-      if (currentGroup.length > 0) timestampGroups.push(currentGroup);
-      currentGroup = [wt];
-      currentSpeaker = wt.speaker;
+  for (let i = 1; i < wordTimestamps.length; i++) {
+    const wt = wordTimestamps[i];
+    if (wt.speaker !== groupSpeaker) {
+      // Flush current group as a block
+      blocks.push(makeBlock(groupWords, groupSpeaker, speakerById, sourceId));
+      groupWords = [wt];
+      groupSpeaker = wt.speaker;
     } else {
-      currentGroup.push(wt);
+      groupWords.push(wt);
     }
   }
-  if (currentGroup.length > 0) timestampGroups.push(currentGroup);
-
-  // Build a set of filler word time positions for quick lookup
-  const fillerSet = new Set<string>();
-  for (const fw of fillerWords) {
-    fillerSet.add(`${fw.start.toFixed(3)}-${fw.end.toFixed(3)}`);
-  }
-
-  const speakerPattern =
-    /^\*\*(.+?)(?::)?\*\*(?:\s*(?:\([^)]*\)\s*)?\n?|\s*)(.*)$/s;
-
-  const blocks: ScriptBlock[] = [];
-
-  for (let i = 0; i < paragraphs.length; i++) {
-    const para = paragraphs[i];
-    if (para.startsWith("#")) continue;
-
-    const match = speakerPattern.exec(para);
-    const speakerName = match ? match[1] : "Unknown";
-    const text = match ? match[2].trim() : para;
-    const speaker = speakerByName.get(speakerName);
-
-    const group = i < timestampGroups.length ? timestampGroups[i] : undefined;
-    const startTime = group ? group[0].start : 0;
-    const endTime = group ? group[group.length - 1].end : 0;
-
-    // Attach WordRef[] from timestamp group
-    const words: WordRef[] = group
-      ? group.map((wt) => {
-          const key = `${wt.start.toFixed(3)}-${wt.end.toFixed(3)}`;
-          const isFiller =
-            fillerSet.has(key) ||
-            FILLER_WORDS.has(wt.word.toLowerCase().replace(/[.,!?]/g, ""));
-          return {
-            word: wt.word,
-            start: wt.start,
-            end: wt.end,
-            confidence: wt.confidence,
-            speaker: wt.speaker,
-            excluded: false,
-            isFiller,
-          };
-        })
-      : [];
-
-    blocks.push({
-      id: crypto.randomUUID(),
-      type: "transcript",
-      speakerId: speaker?.id ?? "unknown",
-      speakerName,
-      originalText: text,
-      startTime,
-      endTime,
-      sourceId,
-      excluded: false,
-      source: "transcript",
-      words,
-    });
-  }
+  // Flush last group
+  blocks.push(makeBlock(groupWords, groupSpeaker, speakerById, sourceId));
 
   return blocks;
 }
 
-// Migrate v1 script to v2 format
+function makeBlock(
+  words: WordTimestamp[],
+  speakerId: string,
+  speakerById: Map<string, Speaker>,
+  sourceId?: string,
+): ScriptBlock {
+  const speaker = speakerById.get(speakerId);
+  // Build display name: "Speaker 0" from "speaker_0", or use actual name
+  const speakerName = speaker?.name ?? speakerId.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  return {
+    id: crypto.randomUUID(),
+    type: "transcript",
+    speakerId,
+    speakerName,
+    originalText: words.map((w) => w.word).join(" "),
+    startTime: words[0].start,
+    endTime: words[words.length - 1].end,
+    sourceId,
+    excluded: false,
+    source: "transcript",
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Migration helpers
+// ---------------------------------------------------------------------------
+
+// Strip word data from blocks (clean up old 880KB documents)
+function stripWordData(block: Record<string, unknown>): ScriptBlock {
+  const b = { ...block } as Record<string, unknown>;
+
+  // If block has old `words` array, extract edit state then delete
+  if (Array.isArray(b.words)) {
+    const words = b.words as Array<{
+      excluded?: boolean;
+      correctedText?: string;
+      isFiller?: boolean;
+    }>;
+    // Extract excluded word indices
+    const excludedIndices: number[] = [];
+    const corrections: Record<string, string> = {};
+    for (let i = 0; i < words.length; i++) {
+      if (words[i].excluded) excludedIndices.push(i);
+      if (words[i].correctedText) corrections[String(i)] = words[i].correctedText!;
+    }
+    if (excludedIndices.length > 0) b.excludedWords = excludedIndices;
+    if (Object.keys(corrections).length > 0) b.wordCorrections = corrections;
+    delete b.words;
+  }
+
+  return b as unknown as ScriptBlock;
+}
+
 function migrateScript(raw: Record<string, unknown>): ProducerScriptV2 {
-  if (raw.version === 2) return raw as unknown as ProducerScriptV2;
+  if (raw.version === 2) {
+    // Strip word data from all blocks in all versions
+    const script = raw as unknown as ProducerScriptV2;
+    return {
+      ...script,
+      versions: script.versions.map((v) => ({
+        ...v,
+        blocks: v.blocks.map((b) => stripWordData(b as unknown as Record<string, unknown>)),
+      })),
+    };
+  }
   // v1 → v2
-  const blocks = (raw.blocks ?? []) as ScriptBlock[];
+  const blocks = ((raw.blocks ?? []) as Array<Record<string, unknown>>).map(stripWordData);
   const versionId = crypto.randomUUID();
   return {
     version: 2,
@@ -222,7 +214,7 @@ export const getScript = query({
   handler: async (ctx, args) => {
     const story = await ctx.db.get(args.storyId);
     if (!story?.generatedScript) return null;
-    // Auto-migrate v1 → v2 on read
+    // Auto-migrate v1 → v2 and strip word data
     return migrateScript(story.generatedScript as Record<string, unknown>);
   },
 });
@@ -235,12 +227,6 @@ export const initializeScript = mutation({
   args: {
     storyId: v.id("stories"),
     sourceId: v.optional(v.id("sources")),
-    fillerWords: v.optional(v.array(v.object({
-      word: v.string(),
-      start: v.number(),
-      end: v.number(),
-      speaker: v.string(),
-    }))),
   },
   handler: async (ctx, args) => {
     const story = await ctx.db.get(args.storyId);
@@ -248,7 +234,10 @@ export const initializeScript = mutation({
 
     // If script already exists, return migrated version
     if (story.generatedScript) {
-      return migrateScript(story.generatedScript as Record<string, unknown>);
+      const migrated = migrateScript(story.generatedScript as Record<string, unknown>);
+      // Persist the cleaned-up version (strips word data)
+      await ctx.db.patch(args.storyId, { generatedScript: migrated });
+      return migrated;
     }
 
     // Find the transcript
@@ -270,20 +259,62 @@ export const initializeScript = mutation({
 
     const speakers = (transcript.speakers ?? []) as Speaker[];
     const wordTimestamps = (transcript.wordTimestamps ?? []) as WordTimestamp[];
-    const fillerWords = (args.fillerWords ?? (transcript as Record<string, unknown>).fillerWords ?? []) as Array<{
-      word: string;
-      start: number;
-      end: number;
-      speaker: string;
-    }>;
 
-    const blocks = parseTranscriptToBlocks(
-      transcript.markdown,
-      speakers,
-      wordTimestamps,
-      fillerWords,
-      args.sourceId,
-    );
+    // Build blocks from word timestamps directly
+    const blocks = buildBlocksFromWordTimestamps(wordTimestamps, speakers, args.sourceId);
+
+    const now = Date.now();
+    const versionId = crypto.randomUUID();
+    const script: ProducerScriptV2 = {
+      version: 2,
+      activeVersionId: versionId,
+      versions: [
+        {
+          id: versionId,
+          name: "Original",
+          blocks,
+          createdAt: now,
+        },
+      ],
+      createdAt: now,
+      lastEditedAt: now,
+    };
+
+    await ctx.db.patch(args.storyId, { generatedScript: script });
+    return script;
+  },
+});
+
+// Force re-initialize: rebuild blocks from word timestamps
+export const reinitializeScript = mutation({
+  args: {
+    storyId: v.id("stories"),
+    sourceId: v.optional(v.id("sources")),
+  },
+  handler: async (ctx, args) => {
+    const story = await ctx.db.get(args.storyId);
+    if (!story) throw new Error("Story not found");
+
+    let transcript = null;
+    if (args.sourceId) {
+      const source = await ctx.db.get(args.sourceId);
+      if (source?.transcriptId) {
+        transcript = await ctx.db.get(source.transcriptId);
+      }
+    }
+    if (!transcript) {
+      transcript = await ctx.db
+        .query("transcripts")
+        .withIndex("by_story", (q) => q.eq("storyId", args.storyId))
+        .first();
+    }
+
+    if (!transcript) throw new Error("No transcript found for this story");
+
+    const speakers = (transcript.speakers ?? []) as Speaker[];
+    const wordTimestamps = (transcript.wordTimestamps ?? []) as WordTimestamp[];
+
+    const blocks = buildBlocksFromWordTimestamps(wordTimestamps, speakers, args.sourceId);
 
     const now = Date.now();
     const versionId = crypto.randomUUID();
@@ -313,12 +344,21 @@ export const saveScript = mutation({
     script: v.any(),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.storyId, {
-      generatedScript: {
-        ...args.script,
-        lastEditedAt: Date.now(),
-      },
-    });
+    // Strip any word data that might have leaked in from client
+    const script = args.script as ProducerScriptV2;
+    const cleaned: ProducerScriptV2 = {
+      ...script,
+      versions: (script.versions ?? []).map((v: ScriptVersion) => ({
+        ...v,
+        blocks: (v.blocks ?? []).map((b: ScriptBlock) => {
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars
+          const { words, ...rest } = b as ScriptBlock & { words?: unknown };
+          return rest as ScriptBlock;
+        }),
+      })),
+      lastEditedAt: Date.now(),
+    };
+    await ctx.db.patch(args.storyId, { generatedScript: cleaned });
   },
 });
 
@@ -506,7 +546,7 @@ export const handleAiSuggestion = mutation({
 });
 
 // ---------------------------------------------------------------------------
-// Word-level mutations
+// Word-level mutations (compact — store indices, not word data)
 // ---------------------------------------------------------------------------
 
 export const toggleWordExclusion = mutation({
@@ -522,11 +562,38 @@ export const toggleWordExclusion = mutation({
     const script = migrateScript(story.generatedScript as Record<string, unknown>);
     const updated = updateActiveBlocks(script, (blocks) =>
       blocks.map((b) => {
-        if (b.id !== args.blockId || !b.words) return b;
-        const words = b.words.map((w, i) =>
-          i === args.wordIndex ? { ...w, excluded: !w.excluded } : w,
-        );
-        return { ...b, words };
+        if (b.id !== args.blockId) return b;
+        const excluded = new Set(b.excludedWords ?? []);
+        if (excluded.has(args.wordIndex)) {
+          excluded.delete(args.wordIndex);
+        } else {
+          excluded.add(args.wordIndex);
+        }
+        return { ...b, excludedWords: [...excluded].sort((a, c) => a - c) };
+      }),
+    );
+
+    await ctx.db.patch(args.storyId, { generatedScript: updated });
+  },
+});
+
+export const setExcludedWords = mutation({
+  args: {
+    storyId: v.id("stories"),
+    blockId: v.string(),
+    wordIndices: v.array(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const story = await ctx.db.get(args.storyId);
+    if (!story?.generatedScript) throw new Error("No script found");
+
+    const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const updated = updateActiveBlocks(script, (blocks) =>
+      blocks.map((b) => {
+        if (b.id !== args.blockId) return b;
+        const current = new Set(b.excludedWords ?? []);
+        for (const idx of args.wordIndices) current.add(idx);
+        return { ...b, excludedWords: [...current].sort((a, c) => a - c) };
       }),
     );
 
@@ -537,19 +604,26 @@ export const toggleWordExclusion = mutation({
 export const removeAllFillers = mutation({
   args: {
     storyId: v.id("stories"),
+    // Client sends which word indices are fillers per block
+    fillerIndices: v.array(v.object({
+      blockId: v.string(),
+      indices: v.array(v.number()),
+    })),
   },
   handler: async (ctx, args) => {
     const story = await ctx.db.get(args.storyId);
     if (!story?.generatedScript) throw new Error("No script found");
 
     const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const fillerMap = new Map(args.fillerIndices.map((f) => [f.blockId, new Set(f.indices)]));
+
     const updated = updateActiveBlocks(script, (blocks) =>
       blocks.map((b) => {
-        if (!b.words) return b;
-        const words = b.words.map((w) =>
-          w.isFiller ? { ...w, excluded: true } : w,
-        );
-        return { ...b, words };
+        const fillers = fillerMap.get(b.id);
+        if (!fillers) return b;
+        const excluded = new Set(b.excludedWords ?? []);
+        for (const idx of fillers) excluded.add(idx);
+        return { ...b, excludedWords: [...excluded].sort((a, c) => a - c) };
       }),
     );
 
@@ -560,19 +634,28 @@ export const removeAllFillers = mutation({
 export const restoreAllFillers = mutation({
   args: {
     storyId: v.id("stories"),
+    fillerIndices: v.array(v.object({
+      blockId: v.string(),
+      indices: v.array(v.number()),
+    })),
   },
   handler: async (ctx, args) => {
     const story = await ctx.db.get(args.storyId);
     if (!story?.generatedScript) throw new Error("No script found");
 
     const script = migrateScript(story.generatedScript as Record<string, unknown>);
+    const fillerMap = new Map(args.fillerIndices.map((f) => [f.blockId, new Set(f.indices)]));
+
     const updated = updateActiveBlocks(script, (blocks) =>
       blocks.map((b) => {
-        if (!b.words) return b;
-        const words = b.words.map((w) =>
-          w.isFiller ? { ...w, excluded: false } : w,
-        );
-        return { ...b, words };
+        const fillers = fillerMap.get(b.id);
+        if (!fillers) return b;
+        const excluded = new Set(b.excludedWords ?? []);
+        for (const idx of fillers) excluded.delete(idx);
+        return {
+          ...b,
+          excludedWords: excluded.size > 0 ? [...excluded].sort((a, c) => a - c) : undefined,
+        };
       }),
     );
 
@@ -594,13 +677,17 @@ export const correctWord = mutation({
     const script = migrateScript(story.generatedScript as Record<string, unknown>);
     const updated = updateActiveBlocks(script, (blocks) =>
       blocks.map((b) => {
-        if (b.id !== args.blockId || !b.words) return b;
-        const words = b.words.map((w, i) =>
-          i === args.wordIndex
-            ? { ...w, correctedText: args.correctedText || undefined }
-            : w,
-        );
-        return { ...b, words };
+        if (b.id !== args.blockId) return b;
+        const corrections = { ...(b.wordCorrections ?? {}) };
+        if (args.correctedText) {
+          corrections[String(args.wordIndex)] = args.correctedText;
+        } else {
+          delete corrections[String(args.wordIndex)];
+        }
+        return {
+          ...b,
+          wordCorrections: Object.keys(corrections).length > 0 ? corrections : undefined,
+        };
       }),
     );
 
@@ -628,7 +715,7 @@ export const createVersion = mutation({
     const newVersion: ScriptVersion = {
       id: newVersionId,
       name: args.name,
-      blocks: JSON.parse(JSON.stringify(activeBlocks)), // deep clone
+      blocks: JSON.parse(JSON.stringify(activeBlocks)),
       createdAt: Date.now(),
     };
 

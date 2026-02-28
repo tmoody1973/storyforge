@@ -20,37 +20,35 @@ export default function AppShell() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="flex h-screen bg-background text-foreground">
-      {/* Sidebar */}
-      <aside className="w-64 border-r border-border flex flex-col">
-        <div className="p-4 border-b border-border">
-          <Link to="/" className="flex items-center gap-2">
-            <Radio className="h-6 w-6 text-brand-orange" />
-            <span className="text-lg font-bold">StoryForge</span>
-          </Link>
-        </div>
-        <nav className="flex-1 p-2 space-y-1">
+    <div className="flex flex-col h-screen bg-background text-foreground">
+      {/* Top nav */}
+      <header className="h-11 border-b border-border flex items-center px-4 shrink-0">
+        <Link to="/" className="flex items-center gap-2 mr-6">
+          <Radio className="h-5 w-5 text-brand-orange" />
+          <span className="text-sm font-bold">StoryForge</span>
+        </Link>
+        <nav className="flex items-center gap-1">
           {navItems.map((item) => {
             const isActive = location.pathname === item.to;
             return (
               <Link
                 key={item.to}
                 to={item.to}
-                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
                   isActive
                     ? "bg-card text-foreground"
                     : "text-cream-dim hover:text-foreground hover:bg-charcoal-surface"
                 }`}
               >
-                <item.icon className="h-4 w-4" />
+                <item.icon className="h-3.5 w-3.5" />
                 {item.label}
               </Link>
             );
           })}
         </nav>
-      </aside>
+      </header>
 
-      {/* Main content */}
+      {/* Main content — full width */}
       <main className="flex-1 overflow-auto">
         <Outlet />
       </main>

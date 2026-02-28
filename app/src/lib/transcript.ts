@@ -22,19 +22,74 @@ export interface TranscriptSegment {
 }
 
 /**
- * Parse a markdown transcript into structured segments with timing data.
+ * Build transcript segments directly from word timestamps.
+ * Groups consecutive words by speaker — timestamps are guaranteed correct
+ * since they come straight from the word data.
+ */
+function buildSegmentsFromWordTimestamps(
+  wordTimestamps: WordTimestamp[],
+  speakers: Speaker[],
+): TranscriptSegment[] {
+  if (wordTimestamps.length === 0) return [];
+
+  const speakerMap = new Map<string, Speaker>();
+  for (const s of speakers) {
+    speakerMap.set(s.id, s);
+    speakerMap.set(s.name, s);
+  }
+
+  const segments: TranscriptSegment[] = [];
+  let groupWords: WordTimestamp[] = [wordTimestamps[0]];
+  let groupSpeaker = wordTimestamps[0].speaker;
+
+  function flush(words: WordTimestamp[], speakerId: string) {
+    const speaker = speakerMap.get(speakerId);
+    const speakerName =
+      speaker?.name ??
+      speakerId.replace("_", " ").replace(/\b\w/g, (c) => c.toUpperCase());
+    segments.push({
+      speakerId: speaker?.id ?? speakerId,
+      speakerName,
+      speakerColor: speaker?.color ?? "#a1a1aa",
+      text: words.map((w) => w.word).join(" "),
+      startTime: words[0].start,
+      endTime: words[words.length - 1].end,
+    });
+  }
+
+  for (let i = 1; i < wordTimestamps.length; i++) {
+    const wt = wordTimestamps[i];
+    if (wt.speaker !== groupSpeaker) {
+      flush(groupWords, groupSpeaker);
+      groupWords = [wt];
+      groupSpeaker = wt.speaker;
+    } else {
+      groupWords.push(wt);
+    }
+  }
+  flush(groupWords, groupSpeaker);
+
+  return segments;
+}
+
+/**
+ * Parse a transcript into structured segments with timing data.
  *
- * Markdown format: paragraphs separated by double newlines, each starting with
- * `**SpeakerName:** rest of text`.
- *
- * Word timestamps are grouped by speaker changes and matched to paragraphs by
- * index to determine time boundaries.
+ * When word timestamps are available, builds segments directly from them
+ * (guaranteed correct timing). Falls back to markdown parsing when no
+ * word timestamps exist.
  */
 export function parseTranscriptMarkdown(
   markdown: string,
   speakers: Speaker[],
   wordTimestamps: WordTimestamp[],
 ): TranscriptSegment[] {
+  // Prefer building from word timestamps — timestamps are always correct
+  if (wordTimestamps.length > 0) {
+    return buildSegmentsFromWordTimestamps(wordTimestamps, speakers);
+  }
+
+  // Fallback: parse markdown (legacy transcripts without word data)
   if (!markdown.trim()) return [];
 
   const speakerByName = new Map<string, Speaker>();
@@ -42,64 +97,31 @@ export function parseTranscriptMarkdown(
     speakerByName.set(s.name, s);
   }
 
-  // Split markdown into paragraphs by double newline
   const paragraphs = markdown
     .split(/\n\n+/)
     .map((p) => p.trim())
     .filter(Boolean);
 
-  // Group word timestamps into contiguous speaker runs
-  const timestampGroups: WordTimestamp[][] = [];
-  let currentGroup: WordTimestamp[] = [];
-  let currentSpeaker: string | null = null;
-
-  for (const wt of wordTimestamps) {
-    if (wt.speaker !== currentSpeaker) {
-      if (currentGroup.length > 0) {
-        timestampGroups.push(currentGroup);
-      }
-      currentGroup = [wt];
-      currentSpeaker = wt.speaker;
-    } else {
-      currentGroup.push(wt);
-    }
-  }
-  if (currentGroup.length > 0) {
-    timestampGroups.push(currentGroup);
-  }
-
-  // Match both formats:
-  //   **Name:** text on same line
-  //   **Name** (0:12)\ntext on next line
   const speakerPattern =
     /^\*\*(.+?)(?::)?\*\*(?:\s*(?:\([^)]*\)\s*)?\n?|\s*)(.*)$/s;
 
   const segments: TranscriptSegment[] = [];
 
-  for (let i = 0; i < paragraphs.length; i++) {
-    const para = paragraphs[i];
-
-    // Skip markdown headings
+  for (const para of paragraphs) {
     if (para.startsWith("#")) continue;
 
     const match = speakerPattern.exec(para);
-
     const speakerName = match ? match[1] : "Unknown";
     const text = match ? match[2].trim() : para;
     const speaker = speakerByName.get(speakerName);
-
-    // Use matching timestamp group by paragraph index for time boundaries
-    const group = i < timestampGroups.length ? timestampGroups[i] : undefined;
-    const startTime = group ? group[0].start : 0;
-    const endTime = group ? group[group.length - 1].end : 0;
 
     segments.push({
       speakerId: speaker?.id ?? "unknown",
       speakerName,
       speakerColor: speaker?.color ?? "#a1a1aa",
       text,
-      startTime,
-      endTime,
+      startTime: 0,
+      endTime: 0,
     });
   }
 

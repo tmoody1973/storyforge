@@ -1,6 +1,6 @@
-import type { TranscriptSegment } from "./transcript";
-import type { ScriptBlock, ProducerScript, ProducerScriptV1, WordRef } from "./scriptTypes";
-import { migrateV1toV2, getActiveBlocks } from "./scriptTypes";
+import type { TranscriptSegment, WordTimestamp } from "./transcript";
+import type { ScriptBlock, ProducerScript, WordRef } from "./scriptTypes";
+import { getActiveBlocks } from "./scriptTypes";
 import { formatTimestamp } from "./transcript";
 
 // ---------------------------------------------------------------------------
@@ -10,6 +10,81 @@ import { formatTimestamp } from "./transcript";
 export interface TimeRange {
   start: number;
   end: number;
+}
+
+// Common filler words
+const FILLER_WORDS = new Set([
+  "um", "uh", "erm", "ah", "hmm", "like", "you know", "i mean",
+  "sort of", "kind of", "basically", "actually", "literally",
+  "right", "so", "well", "okay",
+]);
+
+// ---------------------------------------------------------------------------
+// Client-side word hydration
+// ---------------------------------------------------------------------------
+
+/**
+ * Hydrate a block's word data from the transcript's wordTimestamps.
+ * Filters words by the block's time range, applies exclusions & corrections.
+ */
+export function hydrateBlockWords(
+  block: ScriptBlock,
+  allWordTimestamps: WordTimestamp[],
+  fillerWords?: Array<{ word: string; start: number; end: number; speaker: string }>,
+): WordRef[] {
+  if (block.type !== "transcript" || block.startTime == null || block.endTime == null) {
+    return [];
+  }
+
+  // Build filler set for quick lookup
+  const fillerSet = new Set<string>();
+  if (fillerWords) {
+    for (const fw of fillerWords) {
+      fillerSet.add(`${fw.start.toFixed(3)}-${fw.end.toFixed(3)}`);
+    }
+  }
+
+  const excludedSet = new Set(block.excludedWords ?? []);
+  const corrections = block.wordCorrections ?? {};
+
+  // Find words that fall within this block's time range
+  const blockWords: WordRef[] = [];
+  for (const wt of allWordTimestamps) {
+    if (wt.start >= block.startTime! - 0.01 && wt.end <= block.endTime! + 0.01) {
+      const idx = blockWords.length;
+      const key = `${wt.start.toFixed(3)}-${wt.end.toFixed(3)}`;
+      const isFiller =
+        fillerSet.has(key) ||
+        FILLER_WORDS.has(wt.word.toLowerCase().replace(/[.,!?]/g, ""));
+
+      blockWords.push({
+        word: wt.word,
+        start: wt.start,
+        end: wt.end,
+        confidence: wt.confidence,
+        speaker: wt.speaker,
+        excluded: excludedSet.has(idx),
+        isFiller,
+        correctedText: corrections[String(idx)] ?? undefined,
+      });
+    }
+  }
+
+  return blockWords;
+}
+
+/**
+ * Hydrate all blocks in a script with word data.
+ */
+export function hydrateScript(
+  blocks: ScriptBlock[],
+  wordTimestamps: WordTimestamp[],
+  fillerWords?: Array<{ word: string; start: number; end: number; speaker: string }>,
+): ScriptBlock[] {
+  return blocks.map((block) => ({
+    ...block,
+    words: hydrateBlockWords(block, wordTimestamps, fillerWords),
+  }));
 }
 
 // ---------------------------------------------------------------------------
@@ -27,7 +102,6 @@ export function mergeRanges(ranges: TimeRange[]): TimeRange[] {
   for (let i = 1; i < sorted.length; i++) {
     const last = merged[merged.length - 1];
     if (sorted[i].start <= last.end + 0.01) {
-      // Merge overlapping or nearly-adjacent ranges
       last.end = Math.max(last.end, sorted[i].end);
     } else {
       merged.push({ ...sorted[i] });
@@ -37,8 +111,7 @@ export function mergeRanges(ranges: TimeRange[]): TimeRange[] {
 }
 
 /**
- * Compute all excluded time ranges from script blocks.
- * Collects excluded block ranges + excluded word ranges, sorts, merges.
+ * Compute all excluded time ranges from hydrated script blocks.
  */
 export function computeExcludedRanges(blocks: ScriptBlock[]): TimeRange[] {
   const ranges: TimeRange[] = [];
@@ -47,14 +120,13 @@ export function computeExcludedRanges(blocks: ScriptBlock[]): TimeRange[] {
     if (block.type !== "transcript") continue;
 
     if (block.excluded) {
-      // Entire block excluded
       if (block.startTime != null && block.endTime != null) {
         ranges.push({ start: block.startTime, end: block.endTime });
       }
       continue;
     }
 
-    // Word-level exclusions
+    // Word-level exclusions (from hydrated words)
     if (block.words) {
       for (const word of block.words) {
         if (word.excluded) {
@@ -72,11 +144,11 @@ export function computeExcludedRanges(blocks: ScriptBlock[]): TimeRange[] {
  */
 export function estimateVoDuration(text: string): number {
   const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
-  return (wordCount / 150) * 60; // seconds
+  return (wordCount / 150) * 60;
 }
 
 /**
- * Count total filler words across all blocks.
+ * Count total filler words across hydrated blocks.
  */
 export function countFillerWords(blocks: ScriptBlock[]): number {
   let count = 0;
@@ -103,6 +175,26 @@ export function countExcludedFillers(blocks: ScriptBlock[]): number {
     }
   }
   return count;
+}
+
+/**
+ * Get filler word indices per block (for mutations).
+ */
+export function getFillerIndicesPerBlock(
+  blocks: ScriptBlock[],
+): Array<{ blockId: string; indices: number[] }> {
+  const result: Array<{ blockId: string; indices: number[] }> = [];
+  for (const block of blocks) {
+    if (!block.words) continue;
+    const indices: number[] = [];
+    block.words.forEach((w, i) => {
+      if (w.isFiller) indices.push(i);
+    });
+    if (indices.length > 0) {
+      result.push({ blockId: block.id, indices });
+    }
+  }
+  return result;
 }
 
 /**
@@ -148,118 +240,8 @@ export function computeIncludedDuration(blocks: ScriptBlock[]): {
 }
 
 // ---------------------------------------------------------------------------
-// Legacy helpers (preserved for backward compatibility)
+// Display helpers
 // ---------------------------------------------------------------------------
-
-/**
- * Convert parsed transcript segments into an initial ProducerScript.
- */
-export function initializeScriptFromTranscript(
-  segments: TranscriptSegment[],
-  sourceId?: string,
-): ProducerScript {
-  const now = Date.now();
-  const blocks: ScriptBlock[] = segments.map((seg) => ({
-    id: crypto.randomUUID(),
-    type: "transcript" as const,
-    speakerId: seg.speakerId,
-    speakerName: seg.speakerName,
-    originalText: seg.text,
-    startTime: seg.startTime,
-    endTime: seg.endTime,
-    sourceId,
-    excluded: false,
-    source: "transcript" as const,
-  }));
-
-  const versionId = crypto.randomUUID();
-  return {
-    version: 2,
-    activeVersionId: versionId,
-    versions: [
-      {
-        id: versionId,
-        name: "Original",
-        blocks,
-        createdAt: now,
-      },
-    ],
-    createdAt: now,
-    lastEditedAt: now,
-  };
-}
-
-/**
- * Export a ProducerScript as downloadable markdown.
- */
-export function exportScriptMarkdown(
-  script: ProducerScript,
-  title: string,
-): void {
-  const blocks = getActiveBlocks(script);
-  const lines: string[] = [
-    `# ${title} — Producer's Script`,
-    "",
-    `**Exported:** ${new Date().toLocaleString()}`,
-    "",
-    "---",
-    "",
-  ];
-
-  for (const block of blocks) {
-    if (block.excluded) continue;
-
-    if (block.type === "voiceover") {
-      lines.push(`### [VOICE-OVER]`);
-      if (block.voCueText) {
-        lines.push(`*Cue: ${block.voCueText}*`);
-      }
-      if (block.voDraftNarration) {
-        lines.push("");
-        lines.push(block.voDraftNarration);
-      }
-      lines.push("");
-      continue;
-    }
-
-    // Transcript block — build display text from words if available
-    const timestamp = block.startTime != null
-      ? ` (${formatTimestamp(block.startTime)})`
-      : "";
-    const speaker = block.speakerName ?? "Unknown";
-
-    let text: string;
-    if (block.words && block.words.length > 0) {
-      // Build text from word refs, respecting corrections and exclusions
-      text = block.words
-        .filter((w) => !w.excluded)
-        .map((w) => w.correctedText ?? w.word)
-        .join(" ");
-    } else {
-      text = block.editedText ?? block.originalText ?? "";
-    }
-
-    const editMarker = block.editedText ? " ✏️" : "";
-
-    lines.push(`**${speaker}**${timestamp}${editMarker}`);
-    lines.push(text);
-
-    if (block.notes) {
-      lines.push(`> *Note: ${block.notes}*`);
-    }
-
-    lines.push("");
-  }
-
-  const content = lines.join("\n");
-  const blob = new Blob([content], { type: "text/markdown" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = `${title.replace(/[^a-zA-Z0-9]/g, "_")}_script.md`;
-  a.click();
-  URL.revokeObjectURL(url);
-}
 
 /**
  * Get the display text for a script block.
@@ -268,7 +250,6 @@ export function getBlockDisplayText(block: ScriptBlock): string {
   if (block.type === "voiceover") {
     return block.voDraftNarration ?? block.voCueText ?? "";
   }
-  // If words exist, build from included words with corrections
   if (block.words && block.words.length > 0) {
     return block.words
       .filter((w) => !w.excluded)
@@ -320,4 +301,110 @@ export function findActiveWord(
     }
   }
   return -1;
+}
+
+/**
+ * Export a ProducerScript as downloadable markdown.
+ */
+export function exportScriptMarkdown(
+  script: ProducerScript,
+  title: string,
+): void {
+  const blocks = getActiveBlocks(script);
+  const lines: string[] = [
+    `# ${title} — Producer's Script`,
+    "",
+    `**Exported:** ${new Date().toLocaleString()}`,
+    "",
+    "---",
+    "",
+  ];
+
+  for (const block of blocks) {
+    if (block.excluded) continue;
+
+    if (block.type === "voiceover") {
+      lines.push(`### [VOICE-OVER]`);
+      if (block.voCueText) {
+        lines.push(`*Cue: ${block.voCueText}*`);
+      }
+      if (block.voDraftNarration) {
+        lines.push("");
+        lines.push(block.voDraftNarration);
+      }
+      lines.push("");
+      continue;
+    }
+
+    const timestamp = block.startTime != null
+      ? ` (${formatTimestamp(block.startTime)})`
+      : "";
+    const speaker = block.speakerName ?? "Unknown";
+
+    let text: string;
+    if (block.words && block.words.length > 0) {
+      text = block.words
+        .filter((w) => !w.excluded)
+        .map((w) => w.correctedText ?? w.word)
+        .join(" ");
+    } else {
+      text = block.editedText ?? block.originalText ?? "";
+    }
+
+    lines.push(`**${speaker}**${timestamp}`);
+    lines.push(text);
+
+    if (block.notes) {
+      lines.push(`> *Note: ${block.notes}*`);
+    }
+
+    lines.push("");
+  }
+
+  const content = lines.join("\n");
+  const blob = new Blob([content], { type: "text/markdown" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `${title.replace(/[^a-zA-Z0-9]/g, "_")}_script.md`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Convert parsed transcript segments into an initial ProducerScript.
+ */
+export function initializeScriptFromTranscript(
+  segments: TranscriptSegment[],
+  sourceId?: string,
+): ProducerScript {
+  const now = Date.now();
+  const blocks: ScriptBlock[] = segments.map((seg) => ({
+    id: crypto.randomUUID(),
+    type: "transcript" as const,
+    speakerId: seg.speakerId,
+    speakerName: seg.speakerName,
+    originalText: seg.text,
+    startTime: seg.startTime,
+    endTime: seg.endTime,
+    sourceId,
+    excluded: false,
+    source: "transcript" as const,
+  }));
+
+  const versionId = crypto.randomUUID();
+  return {
+    version: 2,
+    activeVersionId: versionId,
+    versions: [
+      {
+        id: versionId,
+        name: "Original",
+        blocks,
+        createdAt: now,
+      },
+    ],
+    createdAt: now,
+    lastEditedAt: now,
+  };
 }
